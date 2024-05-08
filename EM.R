@@ -50,7 +50,7 @@ E_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
   # define dimensions
   n = nrow(dat_t)
   N = nrow(dat_y)
-  k = length(omega)
+  b_dim = length(omega)
   
   # Numerical integration of the common part and store the results (all sample combined)
   common <- GH_com(Nr.cores=Nr.core, level=level, X,Y,Z, params, plot_nodes=F)
@@ -133,4 +133,22 @@ E_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
     logl = logl,
     GH_common=common
   )
+}
+
+params_generate <- function(method = c("random", "method2", "method3")){
+  chosen_method <- match.arg(method)
+  print(paste("Parameters generated using: ", chosen_method))
+  if (chosen_method == "random"){
+    params <- list(
+      G=diag(runif(2,0.0001,10)),
+      a0=runif(1,-10,10),
+      a1=runif(1,-10,10),
+      a2=runif(1,-10,10),
+      sig_e2=runif(1,0.0001,10),
+      beta_mu=runif(4,-10,10),
+      beta_sigma=runif(4,-1,1),
+      beta_q=runif(4,-1,1)
+    )
+  }
+  return(params)
 }

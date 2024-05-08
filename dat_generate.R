@@ -11,26 +11,26 @@ library(purrr)
 # n   : sample size
 # seed : seed for simulation
 # baseline: baseline survival time distribution. Generalised Gamma (GG), lambda*exp (lexp)
-# Model parameters: sigmaeps2, omega, G, alpha, beta, lambda
+# Model parameters: sigmaeps2, G, alpha, beta, lambda
 
 n=100
 seed=1
 
-omega=c(0,0)
-G=diag(c(0.2,0.2))
-a0=0.4
-a1=0.15
-a2=-0.2
-sig_e2=0.01
-beta_mu=c(1,-0.5,2,1)
-beta_sigma=c(1,-0.4,1,0.5)
-beta_q=c(1,-0.8,1,1)
+# G=diag(c(0.2,0.2))
+# a0=0.4
+# a1=0.15
+# a2=-0.2
+# sig_e2=0.01
+# beta_mu=c(1,-0.5,2,1)
+# beta_sigma=c(1,-0.4,1,0.5)
+# beta_q=c(1,-0.8,1,1)
 visits_time=c(seq(5,60,by=5))
 
 cens_time=60
 
-simDataJ <- function(n, seed, omega, G, a0, a1, a2, sig_e2, beta_mu, beta_sig, beta_q){
+simDataJ <- function(n, seed, G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q){
   
+  b_dim=nrow(G)
   #################
   # Treatment assign
   #################
@@ -39,7 +39,7 @@ simDataJ <- function(n, seed, omega, G, a0, a1, a2, sig_e2, beta_mu, beta_sig, b
   #################
   # Random effects
   #################
-  b <- mvrnorm(n, omega, G)
+  b <- mvrnorm(n, rep(0,b_dim), G)
   colnames(b) <- c('b0','b1')
   #################
   # data matrix
@@ -76,8 +76,14 @@ simDataJ <- function(n, seed, omega, G, a0, a1, a2, sig_e2, beta_mu, beta_sig, b
   #---------------------------------------------------------------------
   # Creating the longitudinal and survival processes object
   #---------------------------------------------------------------------
-  obj <- list(dat_y, dat_t)
-  names(obj) <- c("longitudinal","survival")
+  dat_b <- dat_t %>% select(ID,b0,b1)
+  dat_gg <- dat_t %>% select(ID,mu,sigma,q)
+  dat_y %<>% select(-b0,-b1)
+  dat_t %<>% select(-b0,-b1,-mu,-sigma,-q)
+  obj <- list(dat_y, dat_t, dat_b, dat_gg)
+  names(obj) <- c("longitudinal","survival",'true_b','true_GG')
   
   return(obj)
 }
+
+dat <- do.call(simDataJ, c(list(n = n, seed = seed), params))
