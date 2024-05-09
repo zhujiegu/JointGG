@@ -24,7 +24,7 @@ seed=1
 # beta_mu=c(1,-0.5,2,1)
 # beta_sigma=c(1,-0.4,1,0.5)
 # beta_q=c(1,-0.8,1,1)
-visits_time=c(seq(5,60,by=5))
+visits_time=c(seq(6,60,by=6))/12
 
 cens_time=60
 
@@ -86,4 +86,3 @@ simDataJ <- function(n, seed, G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q
   return(obj)
 }
 
-dat <- do.call(simDataJ, c(list(n = n, seed = seed), params))
