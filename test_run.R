@@ -17,5 +17,8 @@ Nr.cores=1
 GH_level=9
 plot_nodes=T
 
-params <- params_generate('random')
-dat <- do.call(simDataJ, c(list(n = n, seed = seed), params))
+params_true <- params_generate('random')
+dat <- do.call(simDataJ, c(list(n = n, seed = seed), params_true))
+
+
+init_params <- params_true

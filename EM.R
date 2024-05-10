@@ -1,24 +1,38 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params, tol, steps, Nr.core=1){
-  dat_t <- dat$longtitudinal
-  dat_y <- dat$survival
+JM_EM <- function(dat, init_params, tol=1e-3, steps=10, Nr.core=1){
+  tic <- proc.time()
+  params <- init_params
     params_max <- params
+    logl <- c()
+    ####################################
+    # testing
+    params_list <- list()
+    ##################################
+    
+    
     for(i in 1:steps){
-      E_next = E_step(dat, params, GH_level=GH_level, Nr.core=Nr.core)
-      params_next = M_step(E_next, params, dat)
-
-      if(i == 1) logl[1] = E_next$logl
-      logl[i+1] = E_next$logl
+      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=Nr.core)
+      params_next = step_outp$params
       
-      if(i > 1 && abs(logl[i+1]-logl[i]) < tol) break
-      if(i %in% c(1, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)) {
-        print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i+1]-logl[i], logl = logl[i+1]))
+      ##################################
+      # testing 
+      params_list[[i]] <- params_next
+      ##################################
+      
+        
+      logl[i] = step_outp$likl_log
+
+      if(i > 1){
+        if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
+        if(abs(logl[i]-logl[i-1]) < tol) break
+      }
+      if(i %in% c(1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+        print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
       }
       # solve(0)
-      if(logl[i+1] > max(logl[1:i])) params_max <- params_next
+      if(logl[i] == max(logl[1:i])) params_max <- params_next
       params = params_next
-      # debug_list[[i]] <- list(...)
     }
   
   # latent variable values
@@ -32,24 +46,21 @@ JM_EM <- function(dat, init_params, tol, steps, Nr.core=1){
   return(outputt)
 }
 
-E_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
-  
-  dat_t <- dat$longtitudinal
-  dat_y <- dat$survival
-  # retrieve parameters
-  G=params$G
-  a0=params$a0
-  a1=params$a1
-  a2=params$a2
-  sig_e2=params$sig_e2
-  beta_mu=params$beta_mu
-  beta_sigma=params$beta_sigma
-  beta_q=params$beta_q
-  
-  # define dimensions
-  n = nrow(dat_t)
-  N = nrow(dat_y)
-  b_dim = nrow(G)
+EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
+  # # retrieve parameters
+  # G=params$G
+  # a0=params$a0
+  # a1=params$a1
+  # a2=params$a2
+  # sig_e2=params$sig_e2
+  # beta_mu=params$beta_mu
+  # beta_sigma=params$beta_sigma
+  # beta_q=params$beta_q
+  # 
+  # # define dimensions
+  # n = nrow(dat_t)
+  # N = nrow(dat_y)
+  # b_dim = nrow(G)
   
   # Numerical integration of the common part and store the results (all sample combined)
   common_part <- GH_com(Nr.cores=Nr.cores, GH_level=GH_level, dat=dat, params=params, plot_nodes=F)
@@ -60,122 +71,92 @@ E_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
   list_likl <- lapply(list_com, function(e){
     return(sum(e))
   })
+  likl_log <- Reduce('+', list_likl) %>% log
   
-  # E(b|D) and E(b^2|D)
-  E_b <- Map('/', GH_b(moment='first', common_part), list_likl)
-  E_bb <- Map('/', GH_b(moment='second', common_part), list_likl)
-  
+  ##################################################################
+  # Start ECM for survival parameters here, E and cyclic update of betas
+  ##################################################################
   dat_perID_t <- split(dat$survival, dat$survival$ID)
-
-  # Numerical estimation of Q_beta = E(log(f(V,Delta)) and its gradient wrt to beta
-  # E(log(f(V,Delta))
-  Q_beta <- Map('/', GH_Q_beta(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part), list_likl)
+  # Backtracking rule sequentially to find the step size for mu, sigma, q, consecutively.
+  #########################################
+  # mu
+  #########################################
+  s=1
+  # current E(log(f(V,Delta))
+  Q_beta <- GH_Q_beta(Nr.cores=1, update_beta=NULL, updata_value, dat_perID_t, params, common_part, list_likl)
   # Gradients
-  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part)
-  
-
-
-  # Backtracking rule to find the step size s
-  s = 1
-  Q_ab_new <- GH_Q_ab(beta + s*grd_ab,list_nodes_th,Z,list_com_sub,dnmt)
-  
-  while(Q_ab_new < Q_ab + 0.5*s*tcrossprod(grd_ab)){
+  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part, list_likl)
+  Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
+  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_mu))){
     s = 0.8*s
     # print(s)
-    Q_ab_new <- GH_Q_ab(beta + s*grd_ab,list_nodes_th,Z,list_com_sub,dnmt)
+    Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
   }
+  # update for the next beta
+  params$beta_mu <- params$beta_mu + s*Q_grt_beta_mu
+  #########################################
+  # sigma
+  #########################################
+  s=1
+  # current E(log(f(V,Delta))
+  Q_beta <- Q_beta_new
+  # Gradients
+  Q_grt_beta_sigma <- GH_Q_grt_beta(Nr.cores=1, beta_type='sigma', dat_perID_t, params, common_part, list_likl)
+  Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
+  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_sigma))){
+    s = 0.8*s
+    # print(s)
+    Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
+  }
+  # update for the next beta
+  params$beta_sigma <- params$beta_sigma + s*Q_grt_beta_sigma
+  #########################################
+  # q
+  #########################################
+  s=1
+  # current E(log(f(V,Delta))
+  Q_beta <- Q_beta_new
+  # Gradients
+  Q_grt_beta_q <- GH_Q_grt_beta(Nr.cores=1, beta_type='q', dat_perID_t, params, common_part, list_likl)
+  Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
+  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_q))){
+    s = 0.8*s
+    # print(s)
+    Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
+  }
+  # update for the next beta
+  params$beta_q <- params$beta_q + s*Q_grt_beta_q
+  ##################################################################
+  # Update parameters for longitudinal and random effects
+  ##################################################################
+  # E(b|D) and E(b^2|D)
+  E_b <- GH_b(moment='first', common_part, list_likl)
+  df_E_b <- as_tibble(do.call(rbind, E_b))
+  df_E_b$ID <- names(E_b)
+  colnames(df_E_b) <- c("Eb0", "Eb1", "ID")
   
-  # log likelihood
-  logl <- list_lik_log %>% unlist %>% sum
-  # print(list_lik %>% unlist %>% log)
+  E_bb <- GH_b(moment='second', common_part, list_likl)
+  df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as.tibble
+  df_E_bb$ID <- names(E_bb)
+  #a0
+  dat_y <- dat$longitudinal %>% left_join(df_E_b, by = "ID") %>% left_join(df_E_bb, by = "ID")
+  update_y <- with(params, dat_y %>% mutate(a0_next=value-Eb0-(a1+Eb1+a2*treat)*visits_time,
+                                  a1_next=value-a0-Eb0-(Eb1+a2*treat)*visits_time,
+                                  a2_next=value-a0-Eb0-(a1+Eb1)*visits_time,
+                                  sig_e2=(value-a0-(a1+a2*treat)*visits_time)^2 - 
+                                    2*(value-a0-(a1+a2*treat)*visits_time)*(Eb0+Eb1*visits_time) + 
+                                    Ebb0+2*Eb0b1*visits_time+Ebb1*visits_time^2,
+                                  xt=treat*visits_time)) %>% select(-ID, -exposure) %>% colSums %>% t %>% as_tibble
+  n = nrow(dat$survival)
+  N = nrow(dat$longitudinal)
+  params$a0 <- update_y$a0_next/N
+  params$a1 <- update_y$a1_next/update_y$visits_time
+  params$a2 <- update_y$a2_next/update_y$xt
+  params$sig_e2 <- update_y$sig_e2/N
+  params$G <- Reduce('+', E_bb)/n
   
-  # output
-  list(
-    mu_T = mu_TU[,1:r,drop=F],
-    mu_U = mu_TU[,r+1:r,drop=F],
-    S_ttuu = S_ttuu,
-    # Stt = Stt,
-    # Suu = Suu,
-    # Stu = Stu,
-    # Shh = Chh,
-    s = s,
-    grd_ab = grd_ab,
-    logl = logl,
-    GH_common=common
-  )
-}
-
-M_step <- function(E_fit, params, X, Y, Z){
-  orth_x = ssq(params$Wo) > 0
-  orth_y = ssq(params$Co) > 0
-  orth_type = match.arg(orth_type)
-  with(E_fit,{
-    
-    N = nrow(X)
-    p = ncol(X)
-    q = ncol(Y)
-    r = ncol(mu_T)
-    rx = ncol(params$Wo)
-    ry = ncol(params$Co)
-    
-    # 2r x 2r, Average across N samples
-    S_ttuu_avgN <- Reduce("+", S_ttuu)/N
-    Stt <- S_ttuu_avgN[1:r,1:r,drop=FALSE]
-    Suu <- S_ttuu_avgN[r+1:r,r+1:r,drop=FALSE]
-    Stu <- S_ttuu_avgN[1:r,r+1:r,drop=FALSE]
-    Shh <- Suu - t(Stu)%*%params$B - t(params$B)%*%Stu + t(params$B)%*%Stt%*%params$B
-    
-    # print(S_ttuu_avgN)
-    # print(cbind(Stt, Suu, Shh))
-    
-    
-    # filter out samples with negative sig2E or sig2F
-    # Stt, Suu different for each sample
-    tmp_sig2E = sapply(1:N, function(e){
-      1/p * (sum(diag(X[e,,drop=F]%*%t(X[e,,drop=F]))) - 2*sum(diag(mu_T[e,,drop=F]%*%t(params$W)%*%t(X[e,,drop=F]))) +
-               sum(diag(S_ttuu[[e]][1:r,1:r,drop=FALSE])) - sum(diag(params$SigTo)))
-    })
-    tmp_sig2F = sapply(1:N, function(e){
-      1/q * (sum(diag(Y[e,,drop=F]%*%t(Y[e,,drop=F]))) - 2*sum(diag(mu_U[e,,drop=F]%*%t(params$C)%*%t(Y[e,,drop=F]))) +
-               sum(diag(S_ttuu[[e]][r+1:r,r+1:r,drop=FALSE])) - sum(diag(params$SigUo)))
-    })
-    
-    params$sig2E = mean(tmp_sig2E)
-    params$sig2F = mean(tmp_sig2F)
-    
-    # if(params$sig2E < 0) params$sig2E = 1e-5
-    # if(params$sig2F < 0) params$sig2F = 1e-5
-    
-    params$B = t(Stu) %*% MASS::ginv(Stt) * diag(1,r)
-    params$SigT = Stt*diag(1,r)
-    params$SigU = Suu*diag(1,r)
-    params$SigH = Shh*diag(1,r)
-    params$a0 = params$a0 + s*grd_ab[,1]
-    params$a = params$a + s*grd_ab[,1+1:r]
-    params$b = params$b + s*grd_ab[,1+r+1:r]
-    
-    params$W = orth(t(X/N) %*% mu_T %*% MASS::ginv(Stt),type = orth_type)
-    params$C = orth(t(Y/N) %*% mu_U %*% MASS::ginv(Suu),type = orth_type)#
-    
-    # params$sig2E = 1/p * abs(sum(diag(X%*%t(X)))/N - 2*sum(diag(mu_T%*%t(params$W)%*%t(X)))/N +
-    #                        sum(diag(params$SigT)) - sum(diag(params$SigTo)))
-    # params$sig2F = 1/q * abs(sum(diag(Y%*%t(Y)))/N - 2*sum(diag(mu_U%*%t(params$C)%*%t(Y)))/N +
-    #                        sum(diag(params$SigU)) - sum(diag(params$SigUo)))
-    
-    # SVD for high dimensional
-    if(orth_x){
-      dcmp_varxo <- svd_orthpart(X, params$W, params$sig2E, mu_T, Stt, rx)
-      params$Wo = dcmp_varxo$V
-      params$SigTo = diag(x=dcmp_varxo$D, nrow=rx)
-    }
-    if(orth_y){
-      dcmp_varyo <- svd_orthpart(Y, params$C, params$sig2F, mu_U, Suu, ry)
-      params$Co = dcmp_varyo$V
-      params$SigUo = diag(x=dcmp_varyo$D, nrow=ry)
-    }
-    
-    return(params)
-  })
+  outp <- list(params = params, likl_log=likl_log)
+  return(outp)
 }
 
 

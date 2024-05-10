@@ -1,7 +1,7 @@
 # Note the functions in this file do not return the results of numerical integration, they serve as parts of GH, assembled to final results in E_step
 
 # Devide by the marginal likelihood to get the final expectation E[b|D]
-GH_b <- function(moment=c('first','second'), common_part){
+GH_b <- function(moment=c('first','second'), common_part, list_likl){
   moment = match.arg(moment)
   if(moment=='first'){
     results <- lapply(common_part$list_com, function(vec) {
@@ -21,16 +21,25 @@ GH_b <- function(moment=c('first','second'), common_part){
       return(summed_matrix)
     })
   }
+  results <- Map('/', results, list_likl)
   return(results)
 }
 
-# Devide by the marginal likelihood to get the final expectation E[log f(V_i,Delta_i)]
-GH_Q_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part){
-  # beta_type = match.arg(beta_type)
-  IDs <- names(dat_perID_t)
+# E[log f(V_i,Delta_i)]
+GH_Q_beta <- function(Nr.cores=1, update_beta=NULL, update_value, dat_perID_t, params, common_part, list_likl){
   beta_mu <- params$beta_mu
   beta_sigma <- params$beta_sigma
   beta_q <- params$beta_q
+  if (!is.null(update_beta)){
+    update_beta <- match.arg(update_beta, choices = c('mu', 'sigma', 'q'))
+    if(length(beta_mu) != length(update_value)) stop('please supply an update_value with the same length as beta vectors')
+    if(update_beta=='mu') beta_mu = beta_mu+update_value
+    if(update_beta=='sigma') beta_sigma = beta_sigma+update_value
+    if(update_beta=='q') beta_q = beta_q+update_value
+  }
+  
+  IDs <- names(dat_perID_t)
+
   list_f <- parallel::mclapply(dat_perID_t, mc.cores = Nr.cores, function(i){
     f_t <- sapply(1:nrow(common_part$nodes), function(row){
       z <- c(1, i$treat, common_part$nodes[row,])
@@ -60,14 +69,15 @@ GH_Q_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, pa
   })
   
   results <- lapply(IDs, function(i) sum(common_part$list_com[[i]] * list_f[[i]], na.rm = T)) # 0*Inf=NA might occur here
-  names(results) <- IDs
+  # Devide by the marginal likelihood and sum over individuals to get the final expectation
+  results <- Reduce('+', Map('/', results, list_likl))
   return(results)
 }
 
-# Devide by the marginal likelihood to get the final expectation E[d log f(V_i,Delta_i)/d \beta]
-GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part){
+# E[d log f(V_i,Delta_i)/d \beta]
+GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part, list_likl){
   beta_type = match.arg(beta_type)
-  IDs <- names(dat_perID_t)
+  # IDs <- names(dat_perID_t)
   beta_mu <- params$beta_mu
   beta_sigma <- params$beta_sigma
   beta_q <- params$beta_q
@@ -109,6 +119,8 @@ GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t
   # multiply by the common part in GH
   # Apply this function across the corresponding elements of list_f and common_part$list_com
   results <- Map(multiply_sum_matrices, list_f, common_part$list_com)
+  # Devide by the marginal likelihood and sum over individuals to get the final expectation
+  results <- Reduce('+', Map('/', results, list_likl))
   return(results)
 }
 
@@ -141,12 +153,12 @@ GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F){
   nodes <- mu + t(sqrt(2)*t(chol(sigma))%*%t(nodes))
   w <- (1/sqrt(pi))^b_dim * w
   
-  # # visulize the nodes
-  # if(plot_nodes){
-  #   plot(nodes, cex=-5/log(w), pch=19,
-  #        xlab=expression(x[1]),
-  #        ylab=expression(x[2]))
-  # }
+  # visulize the nodes
+  if(plot_nodes){
+    plot(nodes, cex=-5/log(w), pch=19,
+         xlab=expression(x[1]),
+         ylab=expression(x[2]))
+  }
   
   # make list
   n_w <- lapply(seq_len(nrow(nodes)), function(i) list(nodes = nodes[i, ,drop=F], w = w[i]))
@@ -172,17 +184,15 @@ fun_com <- function(nw, dat_y, dat_t, params){
   # nw=n_w[[1]]
   # dat_y=dat_perID_y$ID1
   # dat_t=dat_perID_t$ID1
-  
   ##################################
-  
   
   # assign nodes as random effects
   b <- nw$nodes
   b0 <- b[1,1]
   b1 <- b[1,2]
   # PRODUCT f(Y|b)
-  f_y <- with(params, dat_y %>% rowwise %>% mutate(f=dnorm(x=value, mean=a0+b0+(a1+b1+a2*treat)*visits_time, sd=sqrt(sig_e2))) %>% 
-         ungroup() %>% summarise(fy = prod(f))) %>% as.numeric()
+  f_y <- with(params, dat_y %>% rowwise %>% mutate(mean=a0+b0+(a1+b1+a2*treat)*visits_time,sd=sqrt(sig_e2)) %>% 
+                mutate(f=dnorm(x=value, mean, sd)) %>% ungroup() %>% summarise(fy = prod(f))) %>% as.numeric()
   ##################################
   # testing
   # with(params, a0+b0+(a1+b1+a2*dat_t$treat)*visits_time)
@@ -200,6 +210,7 @@ fun_com <- function(nw, dat_y, dat_t, params){
   f_t <- ifelse(dat_t$status==1, flexsurv::dgengamma(dat_t$times, mu = mu, sigma = sigma, Q=q, log = FALSE),
          flexsurv::pgengamma(dat_t$times, mu = mu, sigma = sigma, Q=q, lower.tail = F, log = FALSE))
   return(f_y*f_t*nw$w)
+  # return(list(f_y=f_y, f_t=f_t, w=nw$w))
 }
 
 # multiplies each matrix by the corresponding scalar and sums all matrices for each ID
