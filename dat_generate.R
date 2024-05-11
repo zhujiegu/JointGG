@@ -16,14 +16,6 @@ library(purrr)
 n=100
 seed=1
 
-# G=diag(c(0.2,0.2))
-# a0=0.4
-# a1=0.15
-# a2=-0.2
-# sig_e2=0.01
-# beta_mu=c(1,-0.5,2,1)
-# beta_sigma=c(1,-0.4,1,0.5)
-# beta_q=c(1,-0.8,1,1)
 visits_time=c(seq(6,60,by=6))/12
 
 cens_time=60

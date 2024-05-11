@@ -75,7 +75,7 @@ GH_Q_beta <- function(Nr.cores=1, update_beta=NULL, update_value, dat_perID_t, p
 }
 
 # E[d log f(V_i,Delta_i)/d \beta]
-GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part, list_likl){
+GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part, list_likl, complex){
   beta_type = match.arg(beta_type)
   # IDs <- names(dat_perID_t)
   beta_mu <- params$beta_mu
@@ -83,7 +83,16 @@ GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t
   beta_q <- params$beta_q
   list_f <- parallel::mclapply(dat_perID_t, mc.cores = Nr.cores, function(i){
     f_t <- lapply(1:nrow(common_part$nodes), function(row){ #value of an individual on every node
-      z <- c(1, i$treat, common_part$nodes[row,])
+      if(complex=='saturated'){
+        z = c(1, i$treat, common_part$nodes[row,])
+      }
+      if(complex=='normal'){
+        if(beta_type=='mu') z = c(1, i$treat, common_part$nodes[row,])
+        if(beta_type %in% c('sigma','q')) z = c(1, i$treat, 0, 0)
+      }
+      if(complex=='test'){
+        z = c(1, 0,0,0)
+      }
       mu <- z %*% beta_mu %>% as.numeric
       sigma <- exp(z %*% beta_sigma) %>% as.numeric
       q <- exp(z %*% beta_q) %>% as.numeric
@@ -99,17 +108,46 @@ GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t
       #######################################
       
       if(beta_type=='mu'){
+        # use exp(log(phi)) to increase stability
+        # phi_w=-exp(log(q)-log(pracma::incgam(q^-2*exp(q*ww), q^-2)) + (q^-2)*log(q^-2)+(q^-2)*(q*ww-exp(q*ww)))
         phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-        grd <- if(i$status==1){-z/(q*sigma)*(1-exp(q*ww))} else{-z*phi_w/sigma} 
+        #################################################
+        # #tesing
+        # if(is.na(phi_w))  browser()
+        # stop(cat(paste0('z=',z, ', mu=',mu, ', sigma=',sigma, ', q=',q, ', w=', ww, '\n', 
+        #                 'values not realistic, use realistic data or use adaptive quadrature')))
+        #################################################
+        if(any(is.na(phi_w),phi_w==Inf, phi_w==-Inf)){
+          warning('unrealistic gradient of beta_mu evaluated at some node, use realistic data or use adaptive quadrature')
+          grd <- z*0
+        }else{
+          grd <- if(i$status==1){-z/(q*sigma)*(1-exp(q*ww))} else{-z*phi_w/sigma} 
+        }
       }
       if(beta_type=='sigma'){
         phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-        grd<- if(i$status==1){-z*(1+ww/q*(1-exp(q*ww)))} else{-z*ww*phi_w}
+        if(any(is.na(phi_w),phi_w==Inf, phi_w==-Inf)){
+          warning('unrealistic gradient of beta_sigma evaluated at some node, use realistic data or use adaptive quadrature')
+          grd <- z*0
+        }else{
+          grd<- if(i$status==1){-z*(1+ww/q*(1-exp(q*ww)))} else{-z*ww*phi_w}
+        }
       }
       if(beta_type=='q'){
+        # phi_q=-sign(ww-2*q^-1)*exp(log(abs(ww-2*q^-1))-log(pracma::incgam(q^-2*exp(q*ww), q^-2)) + (q^-2)*log(q^-2)+(q^-2)*(q*ww-exp(q*ww)))
         phi_q=-(ww-2*q^-1)/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-        grd<- if(i$status==1){z*q^-2*(q^2+2*digamma(q^-2)+4*log(q)-2-q*ww+2*exp(q*ww)-q*ww*exp(q*ww))}else{
-          z*q*(phi_q+2*q^-3*digamma(q^-2))
+        #################################################
+        # #tesing
+        # if(is.na(phi_q))  browser()
+        # if(is.na(phi_q)) stop(cat(paste0('z=',z, ', mu=',mu, ', sigma=',sigma, ', q=',q, ', w=', ww, '\n', 'values not realistic, use realistic data or use adaptive quadrature')))
+        #################################################
+        if(any(is.na(phi_q),phi_q==Inf, phi_q==-Inf)){
+          warning('unrealistic gradient of beta_q evaluated at some node, use realistic data or use adaptive quadrature')
+          grd <- z*0
+        }else{
+          grd<- if(i$status==1){z*q^-2*(q^2+2*digamma(q^-2)+4*log(q)-2-q*ww+2*exp(q*ww)-q*ww*exp(q*ww))}else{
+            z*q*(phi_q+2*q^-3*digamma(q^-2))
+          }
         }
       }
       return(grd)

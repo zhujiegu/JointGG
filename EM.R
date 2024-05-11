@@ -1,6 +1,6 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params, tol=1e-3, steps=10, Nr.core=1){
+JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, complex){
   tic <- proc.time()
   params <- init_params
     params_max <- params
@@ -12,7 +12,7 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=10, Nr.core=1){
     
     
     for(i in 1:steps){
-      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=Nr.core)
+      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex)
       params_next = step_outp$params
       
       ##################################
@@ -46,7 +46,7 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=10, Nr.core=1){
   return(outputt)
 }
 
-EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
+EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex=c('saturated','normal')){
   # # retrieve parameters
   # G=params$G
   # a0=params$a0
@@ -85,12 +85,18 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
   # current E(log(f(V,Delta))
   Q_beta <- GH_Q_beta(Nr.cores=1, update_beta=NULL, updata_value, dat_perID_t, params, common_part, list_likl)
   # Gradients
-  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part, list_likl)
+  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part, list_likl, complex)
   Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
+  k=1 # number of search of s, to prevent infinite loop here
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_mu))){
     s = 0.8*s
     # print(s)
     Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
+    k=k+1
+    if(k>100){
+      warning('trapped in step size search for mu')
+      s=0
+    }
   }
   # update for the next beta
   params$beta_mu <- params$beta_mu + s*Q_grt_beta_mu
@@ -101,12 +107,18 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
   # current E(log(f(V,Delta))
   Q_beta <- Q_beta_new
   # Gradients
-  Q_grt_beta_sigma <- GH_Q_grt_beta(Nr.cores=1, beta_type='sigma', dat_perID_t, params, common_part, list_likl)
+  Q_grt_beta_sigma <- GH_Q_grt_beta(Nr.cores=1, beta_type='sigma', dat_perID_t, params, common_part, list_likl, complex)
   Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
+  k=1
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_sigma))){
     s = 0.8*s
     # print(s)
     Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
+    k=k+1
+    if(k>100){
+      warning('trapped in step size search for sigma')
+      s=0
+    }
   }
   # update for the next beta
   params$beta_sigma <- params$beta_sigma + s*Q_grt_beta_sigma
@@ -117,12 +129,18 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
   # current E(log(f(V,Delta))
   Q_beta <- Q_beta_new
   # Gradients
-  Q_grt_beta_q <- GH_Q_grt_beta(Nr.cores=1, beta_type='q', dat_perID_t, params, common_part, list_likl)
+  Q_grt_beta_q <- GH_Q_grt_beta(Nr.cores=1, beta_type='q', dat_perID_t, params, common_part, list_likl, complex)
   Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
+  k=1
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_q))){
     s = 0.8*s
     # print(s)
     Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
+    k=k+1
+    if(k>100){
+      warning('trapped in step size search for q')
+      s=0
+    }
   }
   # update for the next beta
   params$beta_q <- params$beta_q + s*Q_grt_beta_q
@@ -160,7 +178,7 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core){
 }
 
 
-params_generate <- function(method = c("random", "method2", "method3")){
+params_generate <- function(method = c("random", "specify", "method3"),params_specify=NULL){
   chosen_method <- match.arg(method)
   print(paste("Parameters generated using: ", chosen_method))
   if (chosen_method == "random"){
@@ -174,6 +192,9 @@ params_generate <- function(method = c("random", "method2", "method3")){
       beta_sigma=runif(4,-0.1,0.1),
       beta_q=runif(4,-0.1,0.1)
     )
+  }
+  if (chosen_method == "specify"){
+    params = params_specify
   }
   return(params)
 }
