@@ -75,7 +75,7 @@ GH_Q_beta <- function(Nr.cores=1, update_beta=NULL, update_value, dat_perID_t, p
 }
 
 # E[d log f(V_i,Delta_i)/d \beta]
-GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part, list_likl, complex){
+GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, common_part, list_likl, model_complex){
   beta_type = match.arg(beta_type)
   # IDs <- names(dat_perID_t)
   beta_mu <- params$beta_mu
@@ -83,14 +83,14 @@ GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t
   beta_q <- params$beta_q
   list_f <- parallel::mclapply(dat_perID_t, mc.cores = Nr.cores, function(i){
     f_t <- lapply(1:nrow(common_part$nodes), function(row){ #value of an individual on every node
-      if(complex=='saturated'){
+      if(model_complex=='saturated'){
         z = c(1, i$treat, common_part$nodes[row,])
       }
-      if(complex=='normal'){
+      if(model_complex=='normal'){
         if(beta_type=='mu') z = c(1, i$treat, common_part$nodes[row,])
         if(beta_type %in% c('sigma','q')) z = c(1, i$treat, 0, 0)
       }
-      if(complex=='test'){
+      if(model_complex=='test'){
         z = c(1, 0,0,0)
       }
       mu <- z %*% beta_mu %>% as.numeric
@@ -163,7 +163,7 @@ GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t
 }
 
 # common parts in GH
-GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F){
+GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F, model_complex=model_complex){
   # Data list per ID
   IDs <- unique(dat$longitudinal$ID)
   dat_perID_y <- split(dat$longitudinal, dat$longitudinal$ID)
@@ -202,7 +202,7 @@ GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F){
   n_w <- lapply(seq_len(nrow(nodes)), function(i) list(nodes = nodes[i, ,drop=F], w = w[i]))
   
   list_com <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
-    sapply(n_w, fun_com, dat_y = dat_perID_y[[i]], dat_t = dat_perID_t[[i]], params = params)})
+    sapply(n_w, fun_com, dat_y = dat_perID_y[[i]], dat_t = dat_perID_t[[i]], params = params, model_complex=model_complex)})
   
   names(list_com) <- IDs
   
@@ -216,7 +216,7 @@ GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F){
 
 # common part of every integral
 # PRODUCT f(Y_ij|b_i) * f(V_i,Delta_i|b_i) for each i
-fun_com <- function(nw, dat_y, dat_t, params){
+fun_com <- function(nw, dat_y, dat_t, params, model_complex){
   ##################################
   # testing
   # nw=n_w[[1]]
@@ -240,10 +240,19 @@ fun_com <- function(nw, dat_y, dat_t, params){
 
   
   # f(V_i,Delta_i|b_i)
-  z <- c(1,dat_t$treat,b)
-  mu <- z %*% params$beta_mu %>% as.numeric
-  sigma <- exp(z %*% params$beta_sigma) %>% as.numeric
-  q <- exp(z %*% params$beta_q) %>% as.numeric
+  if(model_complex=='saturated'){
+    z_mu =z_sigma = z_q = c(1, dat_t$treat,b)
+  }
+  if(model_complex=='normal'){
+    z_mu = c(1, dat_t$treat,b)
+    z_sigma = z_q = c(1, dat_t$treat, 0, 0)
+  }
+  if(model_complex=='test'){
+    z_mu =z_sigma = z_q = c(1, 0,0,0)
+  }
+  mu <- z_mu %*% params$beta_mu %>% as.numeric
+  sigma <- exp(z_sigma %*% params$beta_sigma) %>% as.numeric
+  q <- exp(z_q %*% params$beta_q) %>% as.numeric
   
   f_t <- ifelse(dat_t$status==1, flexsurv::dgengamma(dat_t$times, mu = mu, sigma = sigma, Q=q, log = FALSE),
          flexsurv::pgengamma(dat_t$times, mu = mu, sigma = sigma, Q=q, lower.tail = F, log = FALSE))

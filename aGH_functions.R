@@ -1,13 +1,9 @@
-# common parts in GH
-GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F){
+# produce adjusted notes and weights
+aGH_n_w <- function(reffects.individual, var.reffects, Nr.cores=1, GH_level=9, dat, plot_nodes=F){
   # Data list per ID
   IDs <- unique(dat$longitudinal$ID)
-  dat_perID_y <- split(dat$longitudinal, dat$longitudinal$ID)
-  dat_perID_y <- dat_perID_y[IDs]
-  dat_perID_t <- split(dat$survival, dat$survival$ID)
-  dat_perID_t <- dat_perID_t[IDs]
   
-  b_dim = nrow(params$G)
+  b_dim = ncol(reffects.individual[[1]])
   N = nrow(dat$longitudinal)
   n = length(IDs)
   
@@ -16,46 +12,117 @@ GH_com <- function(Nr.cores=1, GH_level=9, dat, params, plot_nodes=F){
   # expand grid
   nodes <- as.matrix(expand.grid(rep(list(GH$x), b_dim)))
   w <- as.matrix(expand.grid(rep(list(GH$w), b_dim))) 
+  # \sqrt(2)w*exp(||nodes||^2)
+  w <- 2^(b_dim/2)*apply(w, 1, prod)*exp(rowSums(nodes*nodes))
 
-  # adjust location for each i
-  mu <- rep(0,b_dim)
-  sigma <- params$G
+  n_w_adj <- mclapply(IDs, mc.cores = Nr.cores, function(i){
+    aGH_nodes = adjust_nodes(mu_b_i=reffects.individual[[i]], var_b_i=var.reffects[[i]], nodes,w)
+    ####################################################################
+    # # testing
+    # aGH_nodes = adjust_nodes(mu_b_i=data.frame(0,0), var_b_i=params$G, nodes,w)
+    
+    return(aGH_nodes)
+  })
+  names(n_w_adj) <- IDs
   
-  adjust_nodes <- function(mu_b_i, var_b_i, nodes){
-    B_tilde_inv <- solve(chol(solve(var_b_i)))
-    nodes_i = slice(mu_b_i, rep(1, nrow(nodes)))  + sqrt(2)*t(B_tilde_inv%*%t(nodes))
-    return(nodes_i)
-  }
-  nodes_adj <- lapply(IDs, function(i) adjust_nodes(mu_b_i=reffects.individual[[i]], var_b_i=var.reffects[[i]], nodes))
-  
-  # 2^q/2 \pi_t exp(||b||^2)
-  aGH_w <- 2^(b_dim/2) * apply(w, 1, prod) * exp(rowSums(nodes_adj * nodes_adj))
-  
-  # visulize the nodes
-  if(plot_nodes){
-    plot(nodes_adj[[6]], cex=-5/log(w), pch=19,
-         xlab=expression(x[1]),
-         ylab=expression(x[2]))
-  }
-  
-
-  
-
-  
-  # make list
-  n_w <- lapply(seq_len(nrow(nodes)), function(i) list(nodes = nodes[i, ,drop=F], w = w[i]))
-  
-  list_com <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
-    sapply(n_w, fun_com, dat_y = dat_perID_y[[i]], dat_t = dat_perID_t[[i]], params = params)})
-  
-  names(list_com) <- IDs
-  
+  # # visulize the nodes
+  # if(plot_nodes){
+  #   plot(nodes_adj[[6]]$aGH_nodes, cex=nodes_adj[[6]]$aGH_w, pch=19,
+  #        xlab=expression(x[1]),
+  #        ylab=expression(x[2]))
+  # }
+  # 
   # browser()
   
   # nodes <- lapply(seq_len(nrow(nodes)), function(i) nodes[i, ,drop=F])
-  return(list(list_com=list_com, nodes=nodes))
+  return(n_w_adj)
 }
 
+aGH_results_ll <- function(params, n_w_adj, dat, Nr.cores, model_complex){
+  IDs <- unique(dat$longitudinal$ID)
+  dat_perID_y <- split(dat$longitudinal, dat$longitudinal$ID)
+  dat_perID_y <- dat_perID_y[IDs]
+  dat_perID_t <- split(dat$survival, dat$survival$ID)
+  dat_perID_t <- dat_perID_t[IDs]
+  
+  list_fs <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
+    aGH_densities_i(n_w_adj[[i]], dat_y = dat_perID_y[[i]], dat_t = dat_perID_t[[i]], params = params, model_complex = model_complex)})
+  names(list_fs) <- IDs
+  
+  ll <- sapply(IDs, function(i){
+    parts <- list_fs[[i]] %>% mutate(w=n_w_adj[[i]]$w)
+    apply(parts, 1, prod) %>% sum
+  })
+  # names(list_fs) <- IDs
+  return(sum(ll))
+}
+
+aGH_densities_i <- function(nw, dat_y, dat_t, params, model_complex){
+  ##################################
+  # testing
+  # nw=n_w[[1]]
+  # dat_y=dat_perID_y$ID1
+  # dat_t=dat_perID_t$ID1
+  ##################################
+  b_dim=2
+  
+  fs <- sapply(1:length(nw$w), function(k){
+    # assign nodes as random effects
+    r <- nw$n[k, ,drop=F] %>% as.matrix() 
+    b0 <- r[1,1]
+    b1 <- r[1,2]
+    
+    ######################################
+    # PRODUCT f(Y|b)
+    f_y <- with(params, dat_y %>% rowwise %>% mutate(mean=a0+b0+(a1+b1+a2*treat)*visits_time,sd=sqrt(sig_e2)) %>% 
+                  mutate(f=dnorm(x=value, mean, sd)) %>% ungroup() %>% summarise(fy = prod(f))) %>% as.numeric()
+    
+    ######################################
+    # f(V, Delta | b)
+    if(model_complex=='saturated'){
+      z_mu =z_sigma = z_q = cbind(1, dat_t$treat,r)
+    }
+    if(model_complex=='normal'){
+      z_mu = c(1, dat_t$treat,r)
+      z_sigma = z_q = c(1, dat_t$treat, 0, 0)
+    }
+    if(model_complex=='test'){
+      z_mu =z_sigma = z_q = c(1, 0,0,0)
+    }
+    mu <- z_mu %*% params$beta_mu %>% as.numeric
+    sigma <- exp(z_sigma %*% params$beta_sigma) %>% as.numeric
+    q <- exp(z_q %*% params$beta_q) %>% as.numeric
+    f_t <- ifelse(dat_t$status==1, flexsurv::dgengamma(dat_t$times, mu = mu, sigma = sigma, Q=q, log = FALSE),
+                  flexsurv::pgengamma(dat_t$times, mu = mu, sigma = sigma, Q=q, lower.tail = F, log = FALSE))
+    
+    ######################################
+    # f(sqrt(2)*tilde(r_t)|theta)
+    f_b <- Rfast::dmvnorm(r, mu = rep(0, b_dim), sigma = params$G)
+    return(c(f_y=f_y, f_t=f_t, f_b=f_b))
+  }) %>% t %>% as_tibble
+  return(fs)
+}
+
+# multiplies each matrix by the corresponding scalar and sums all matrices for each ID
+multiply_sum_matrices <- function(matrices, scalars) {
+  Reduce(`+`, mapply(function(matrix, scalar) {
+    matrix * scalar
+  }, matrices, scalars, SIMPLIFY = FALSE))
+}
+
+adjust_nodes <- function(mu_b_i, var_b_i, nodes, w){
+  # the lower triangle L
+  L = chol(var_b_i) %>% t
+  # \sqrt(2)|L|w*exp(||nodes||^2)
+  w_i = det(L)*w
+  # mu + \sqrt(2)L*node 
+  nodes_i = slice(mu_b_i, rep(1, nrow(nodes)))  + sqrt(2)*t(L%*%t(nodes))
+  ###################################################################
+  # # testing
+  # B_tilde_inv <- solve(chol(solve(params$G)))
+  # nodes_i = sqrt(2)*t(B_tilde_inv%*%t(nodes))
+  return(list(n=nodes_i, w=w_i))
+}
 
 # Standard Gauss-Hermite rule from JM
 gauher <-

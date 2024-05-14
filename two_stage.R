@@ -27,7 +27,7 @@ get_reffects_var <- function(model_fit , dat_i){
   coef.fixed=matrix(model_fit$coef$fixed,nrow=length(model_fit$coef$fixed),ncol=1)
   z.mat=model.matrix(formula(model_fit$modelStruct$reStr)[[1]],dat_i) #random effects design matrix
   t.z.mat=t(z.mat)
-  G=as.matrix(getVarCov(model_fit))
+  G=unclass(getVarCov(model_fit))
   
   # # Check BLUPs
   # (G%*%t.z.mat)%*%solve((z.mat%*%G%*%t.z.mat+resid.var*corr.mat))%*%(dat_perID_y[[i]]$value-x.mat%*%coef.fixed)

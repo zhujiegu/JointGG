@@ -1,6 +1,6 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, complex){
+JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, model_complex){
   tic <- proc.time()
   params <- init_params
     params_max <- params
@@ -12,7 +12,7 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, complex){
     
     
     for(i in 1:steps){
-      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex)
+      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=Nr.core, model_complex)
       params_next = step_outp$params
       
       ##################################
@@ -46,7 +46,7 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, complex){
   return(outputt)
 }
 
-EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex=c('saturated','normal')){
+EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, model_complex=c('saturated','normal')){
   # # retrieve parameters
   # G=params$G
   # a0=params$a0
@@ -63,7 +63,7 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex=c('
   # b_dim = nrow(G)
   
   # Numerical integration of the common part and store the results (all sample combined)
-  common_part <- GH_com(Nr.cores=Nr.cores, GH_level=GH_level, dat=dat, params=params, plot_nodes=F)
+  common_part <- GH_com(Nr.cores=Nr.cores, GH_level=GH_level, dat=dat, params=params, plot_nodes=F, model_complex)
   list_com <- common_part$list_com # values of common parts (list(length N) of list (dim^Q))
   list_nodes <- common_part$nodes
   
@@ -85,7 +85,7 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex=c('
   # current E(log(f(V,Delta))
   Q_beta <- GH_Q_beta(Nr.cores=1, update_beta=NULL, updata_value, dat_perID_t, params, common_part, list_likl)
   # Gradients
-  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part, list_likl, complex)
+  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part, list_likl, model_complex)
   Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
   k=1 # number of search of s, to prevent infinite loop here
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_mu))){
@@ -107,7 +107,7 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex=c('
   # current E(log(f(V,Delta))
   Q_beta <- Q_beta_new
   # Gradients
-  Q_grt_beta_sigma <- GH_Q_grt_beta(Nr.cores=1, beta_type='sigma', dat_perID_t, params, common_part, list_likl, complex)
+  Q_grt_beta_sigma <- GH_Q_grt_beta(Nr.cores=1, beta_type='sigma', dat_perID_t, params, common_part, list_likl, model_complex)
   Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
   k=1
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_sigma))){
@@ -129,7 +129,7 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, complex=c('
   # current E(log(f(V,Delta))
   Q_beta <- Q_beta_new
   # Gradients
-  Q_grt_beta_q <- GH_Q_grt_beta(Nr.cores=1, beta_type='q', dat_perID_t, params, common_part, list_likl, complex)
+  Q_grt_beta_q <- GH_Q_grt_beta(Nr.cores=1, beta_type='q', dat_perID_t, params, common_part, list_likl, model_complex)
   Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
   k=1
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_q))){
@@ -196,5 +196,31 @@ params_generate <- function(method = c("random", "specify", "method3"),params_sp
   if (chosen_method == "specify"){
     params = params_specify
   }
+  return(params)
+}
+
+
+params_vec_list <- function(params_vec) {
+  # Assuming the order and size of each parameter is known and fixed as per your description
+  params <- list()
+  
+  # Extract and reshape matrix G (assuming it's 2x2 as shown)
+  params$G <- matrix(params_vec[1:4], nrow = 2, byrow = TRUE)
+  
+  # Scalars a0, a1, a2, sig_e2
+  params$a0 <- params_vec[5]
+  params$a1 <- params_vec[6]
+  params$a2 <- params_vec[7]
+  params$sig_e2 <- params_vec[8]
+  
+  # Assuming beta_mu is a params_vector of length 4 (based on your unlisting)
+  params$beta_mu <- params_vec[9:12]
+  
+  # Assuming beta_sigma is another params_vector of length 4
+  params$beta_sigma <- params_vec[13:16]
+  
+  # Assuming beta_q is a params_vector of length 4
+  params$beta_q <- params_vec[17:20]
+  
   return(params)
 }
