@@ -1,51 +1,62 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, model_complex){
+JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, model_complex, GH_level){
+  if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   tic <- proc.time()
-  params <- init_params
-    params_max <- params
-    logl <- c()
-    ####################################
-    # testing
-    params_list <- list()
-    ##################################
-
-    for(i in 1:steps){
-      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=1, n_w_adj,  model_complex)
-      params_next = step_outp$params
-      
-      ##################################
-      # testing 
-      params_list[[i]] <- params_next
-      ##################################
-      
-        
-      logl[i] = step_outp$likl_log
-
-      if(i > 1){
-        if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
-        if(abs(logl[i]-logl[i-1]) < tol) break
-      }
-      if(i %in% c(1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
-        print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
-      }
-      # solve(0)
-      if(logl[i] == max(logl[1:i])) params_max <- params_next
-      params = params_next
-    }
+  # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
+  fit_y <- fit_longitudinal(dat)
+  n_w_adj <- aGH_n_w(fit_y$reffects.individual, fit_y$var.reffects, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
   
-  # latent variable values
-  E_outp = E_step(dat, params, GH_level=GH_level, Nr.cores=Nr.cores)
-  latent_var <- E_outp[names(E_outp) %in% c('b')]
+  if(init_params=='two-stage'){
+    fit_t <- fit_survival(dat, model_complex, fit_y$reffects.individual)
+    init_params <- list(G=fit_y$G,
+                        a0=fit_y$a0,
+                        a1=fit_y$a1,
+                        a2=fit_y$a2,
+                        sig_e2=fit_y$sig_e2,
+                        beta_mu=fit_t$beta_mu,
+                        beta_sigma=fit_t$beta_sigma,
+                        beta_q=fit_t$beta_q)
+  }
+  params <- init_params
+  params_max <- params
+  logl <- c()
+  ####################################
+  # testing
+  params_list <- list()
+  ##################################
+  
+  for(i in 1:steps){
+    step_outp = EM_step(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+    params_next = step_outp$params
+    
+    ##################################
+    # testing 
+    params_list[[i]] <- params_next
+    ##################################
+    
+    logl[i] = step_outp$likl_log
+    
+    if(i > 1){
+      if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
+      if(abs(logl[i]-logl[i-1]) < tol) break
+    }
+    if(i %in% c(1, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+      print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
+    }
+    # solve(0)
+    if(logl[i] == max(logl[1:i])) params_max <- params_next
+    params = params_next
+  }
   
   message("Nr steps was ", i)
-  message("Log-likelihood: ", logl[i+1])
-  outputt <- list(params = params, latent_var=latent_var, logl = logl[0:i+1][-1], GH_level=GH_level) #, debug = debug_list)
+  message("Log-likelihood: ", logl[i])
+  outputt <- list(params = params, E_b=step_outp$E_b, logl = logl, params_list=params_list, model_complex=model_complex, GH_level=GH_level) #, debug = debug_list)
   class(outputt) <- "JMGG"
   return(outputt)
 }
 
-EM_step <- function(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
+EM_step <- function(dat, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
 
   # Numerical integration of the common part and store the results (all sample combined)
   list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
@@ -69,19 +80,19 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj, 
   #########################################
   # mu
   #########################################
-  s=0.01
+  s=0.1
   # current E(log(f(V,Delta))
-  Q_beta <- aGH_Q_beta(Nr.cores=1, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params, 
+  Q_beta <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params, 
                        list_com, n_w_adj, list_likl,model_complex)
   # Gradients
-  Q_grt_beta <- aGH_Q_grt_beta(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
-  Q_beta_new <- aGH_Q_beta(Nr.cores=1, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
+  Q_grt_beta <- aGH_Q_grt_beta(Nr.cores=Nr.cores, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+  Q_beta_new <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
                            update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
   k=1 # number of search of s, to prevent infinite loop here
   while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta))){
     s = 0.8*s
     # print(s)
-    Q_beta_new <- aGH_Q_beta(Nr.cores=1, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
+    Q_beta_new <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
                              update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
     k=k+1
     if(k>50){
@@ -105,12 +116,12 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj, 
   # Update parameters for longitudinal and random effects
   ##################################################################
   # E(b|D) and E(b^2|D)
-  E_b <- aGH_b(moment='first', list_com, n_w_adj, list_likl, Nr.cores=1)
+  E_b <- aGH_b(moment='first', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
   df_E_b <- as_tibble(do.call(rbind, E_b))
   df_E_b$ID <- names(E_b)
   colnames(df_E_b) <- c("Eb0", "Eb1", "ID")
   
-  E_bb <- aGH_b(moment='second', list_com, n_w_adj, list_likl, Nr.cores=1)
+  E_bb <- aGH_b(moment='second', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
   df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as.tibble
   df_E_bb$ID <- names(E_b)
   # browser()
@@ -131,7 +142,7 @@ EM_step <- function(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj, 
   params$sig_e2 <- update_y$sig_e2/N
   params$G <- Reduce('+', E_bb)/n
   
-  outp <- list(params = params, likl_log=likl_log)
+  outp <- list(params = params, likl_log=likl_log, E_b=df_E_b)
   return(outp)
 }
 
