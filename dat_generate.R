@@ -13,14 +13,7 @@ library(purrr)
 # baseline: baseline survival time distribution. Generalised Gamma (GG), lambda*exp (lexp)
 # Model parameters: sigmaeps2, G, alpha, beta, lambda
 
-n=100
-seed=1
-
-visits_time=c(seq(6,60,by=6))/12
-
-cens_time=60
-
-simDataJ <- function(n, seed, G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q){
+simDataJ <- function(n, seed, visits_time, cens_time, G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q){
   
   b_dim=nrow(G)
   #################

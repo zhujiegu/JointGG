@@ -1,6 +1,6 @@
 # Note the functions in this file do not return the results of numerical integration, they serve as parts of GH, assembled to final results in E_step
 
-# Devide by the marginal likelihood to get the final expectation E[b|D]
+# E[b|D]
 GH_b <- function(moment=c('first','second'), common_part, list_likl){
   moment = match.arg(moment)
   if(moment=='first'){
@@ -135,7 +135,7 @@ GH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t
       }
       if(beta_type=='q'){
         # phi_q=-sign(ww-2*q^-1)*exp(log(abs(ww-2*q^-1))-log(pracma::incgam(q^-2*exp(q*ww), q^-2)) + (q^-2)*log(q^-2)+(q^-2)*(q*ww-exp(q*ww)))
-        phi_q=-(ww-2*q^-1)/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
+        phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
         #################################################
         # #tesing
         # if(is.na(phi_q))  browser()

@@ -9,10 +9,9 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, model_complex)
     # testing
     params_list <- list()
     ##################################
-    
-    
+
     for(i in 1:steps){
-      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=Nr.core, model_complex)
+      step_outp = EM_step(dat, params, GH_level=GH_level, Nr.core=1, n_w_adj,  model_complex)
       params_next = step_outp$params
       
       ##################################
@@ -36,7 +35,7 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, model_complex)
     }
   
   # latent variable values
-  E_outp = E_step(dat, params, GH_level=GH_level, Nr.core=Nr.core)
+  E_outp = E_step(dat, params, GH_level=GH_level, Nr.cores=Nr.cores)
   latent_var <- E_outp[names(E_outp) %in% c('b')]
   
   message("Nr steps was ", i)
@@ -46,116 +45,75 @@ JM_EM <- function(dat, init_params, tol=1e-3, steps=5, Nr.core=1, model_complex)
   return(outputt)
 }
 
-EM_step <- function(dat, params, GH_level=GH_level, Nr.core=Nr.core, model_complex=c('saturated','normal')){
-  # # retrieve parameters
-  # G=params$G
-  # a0=params$a0
-  # a1=params$a1
-  # a2=params$a2
-  # sig_e2=params$sig_e2
-  # beta_mu=params$beta_mu
-  # beta_sigma=params$beta_sigma
-  # beta_q=params$beta_q
-  # 
-  # # define dimensions
-  # n = nrow(dat_t)
-  # N = nrow(dat_y)
-  # b_dim = nrow(G)
-  
+EM_step <- function(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
+
   # Numerical integration of the common part and store the results (all sample combined)
-  common_part <- GH_com(Nr.cores=Nr.cores, GH_level=GH_level, dat=dat, params=params, plot_nodes=F, model_complex)
-  list_com <- common_part$list_com # values of common parts (list(length N) of list (dim^Q))
-  list_nodes <- common_part$nodes
+  list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
+  # list_nodes <- common_part$nodes
   
   # likelihood of each sample
   list_likl <- lapply(list_com, function(e){
     return(sum(e))
   })
-  likl_log <- Reduce('+', list_likl) %>% log
-  
+  likl_log <- sapply(list_likl, log) %>% sum
+
   ##################################################################
   # Start ECM for survival parameters here, E and cyclic update of betas
   ##################################################################
+  IDs <- unique(dat$longitudinal$ID)
+  dat_perID_y <- split(dat$longitudinal, dat$longitudinal$ID)
+  dat_perID_y <- dat_perID_y[IDs]
   dat_perID_t <- split(dat$survival, dat$survival$ID)
+  dat_perID_t <- dat_perID_t[IDs]
   # Backtracking rule sequentially to find the step size for mu, sigma, q, consecutively.
   #########################################
   # mu
   #########################################
-  s=1
+  s=0.01
   # current E(log(f(V,Delta))
-  Q_beta <- GH_Q_beta(Nr.cores=1, update_beta=NULL, updata_value, dat_perID_t, params, common_part, list_likl)
+  Q_beta <- aGH_Q_beta(Nr.cores=1, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params, 
+                       list_com, n_w_adj, list_likl,model_complex)
   # Gradients
-  Q_grt_beta_mu <- GH_Q_grt_beta(Nr.cores=1, beta_type='mu', dat_perID_t, params, common_part, list_likl, model_complex)
-  Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
+  Q_grt_beta <- aGH_Q_grt_beta(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+  Q_beta_new <- aGH_Q_beta(Nr.cores=1, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
+                           update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
   k=1 # number of search of s, to prevent infinite loop here
-  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_mu))){
+  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta))){
     s = 0.8*s
     # print(s)
-    Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='mu', update_value=s*Q_grt_beta_mu, dat_perID_t, params, common_part, list_likl)
+    Q_beta_new <- aGH_Q_beta(Nr.cores=1, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
+                             update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
     k=k+1
-    if(k>100){
-      warning('trapped in step size search for mu')
+    if(k>50){
+      warning(paste0('trapped in step size search for beta'))
       s=0
+      break
     }
   }
+  ##################################################
+  # # testing
+  # del=1e-19
+  # grd_num <- aGH_Q_beta(Nr.cores=1, update_beta=NULL, update_value, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)-
+  #   aGH_Q_beta(Nr.cores=1, update_beta='mu', update_value=c(del,0,0,0), dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+  # grd_num/del
+  
   # update for the next beta
-  params$beta_mu <- params$beta_mu + s*Q_grt_beta_mu
-  #########################################
-  # sigma
-  #########################################
-  s=1
-  # current E(log(f(V,Delta))
-  Q_beta <- Q_beta_new
-  # Gradients
-  Q_grt_beta_sigma <- GH_Q_grt_beta(Nr.cores=1, beta_type='sigma', dat_perID_t, params, common_part, list_likl, model_complex)
-  Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
-  k=1
-  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_sigma))){
-    s = 0.8*s
-    # print(s)
-    Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='sigma', update_value=s*Q_grt_beta_sigma, dat_perID_t, params, common_part, list_likl)
-    k=k+1
-    if(k>100){
-      warning('trapped in step size search for sigma')
-      s=0
-    }
-  }
-  # update for the next beta
-  params$beta_sigma <- params$beta_sigma + s*Q_grt_beta_sigma
-  #########################################
-  # q
-  #########################################
-  s=1
-  # current E(log(f(V,Delta))
-  Q_beta <- Q_beta_new
-  # Gradients
-  Q_grt_beta_q <- GH_Q_grt_beta(Nr.cores=1, beta_type='q', dat_perID_t, params, common_part, list_likl, model_complex)
-  Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
-  k=1
-  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta_q))){
-    s = 0.8*s
-    # print(s)
-    Q_beta_new <- GH_Q_beta(Nr.cores=1, update_beta='q', update_value=s*Q_grt_beta_q, dat_perID_t, params, common_part, list_likl)
-    k=k+1
-    if(k>100){
-      warning('trapped in step size search for q')
-      s=0
-    }
-  }
-  # update for the next beta
-  params$beta_q <- params$beta_q + s*Q_grt_beta_q
+  params$beta_mu <- params$beta_mu + s*Q_grt_beta[1:4]
+  params$beta_sigma <- params$beta_sigma + s*Q_grt_beta[5:8]
+  params$beta_q <- params$beta_q + s*Q_grt_beta[9:12]
   ##################################################################
   # Update parameters for longitudinal and random effects
   ##################################################################
   # E(b|D) and E(b^2|D)
-  E_b <- GH_b(moment='first', common_part, list_likl)
+  E_b <- aGH_b(moment='first', list_com, n_w_adj, list_likl, Nr.cores=1)
   df_E_b <- as_tibble(do.call(rbind, E_b))
   df_E_b$ID <- names(E_b)
   colnames(df_E_b) <- c("Eb0", "Eb1", "ID")
   
-  E_bb <- GH_b(moment='second', common_part, list_likl)
+  E_bb <- aGH_b(moment='second', list_com, n_w_adj, list_likl, Nr.cores=1)
   df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as.tibble
-  df_E_bb$ID <- names(E_bb)
+  df_E_bb$ID <- names(E_b)
+  # browser()
   #a0
   dat_y <- dat$longitudinal %>% left_join(df_E_b, by = "ID") %>% left_join(df_E_bb, by = "ID")
   update_y <- with(params, dat_y %>% mutate(a0_next=value-Eb0-(a1+Eb1+a2*treat)*visits_time,
