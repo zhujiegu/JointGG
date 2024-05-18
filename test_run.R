@@ -16,7 +16,7 @@ seed=1
 visits_time=c(seq(6,60,by=6))/12
 cens_time=5
 
-Nr.cores=1
+Nr.cores=10
 GH_level=9
 
 # params_specify <- list(
@@ -134,7 +134,8 @@ ll_grt_t <- function(params_vec){
     }
     if(model_complex=='normal'){
       z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
-      z_sigma = z_q = cbind(1, dat_t[i,]$treat, 0, 0) %>% matrix(nrow=1)
+      z_sigma = cbind(1, dat_t[i,]$treat, 0, 0) %>% matrix(nrow=1)
+      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     if(model_complex=='test'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
@@ -164,8 +165,7 @@ ll_grt_t <- function(params_vec){
 }
 
 
-# fit_t <- optim(rep(0.1,6),ll_t, method = 'Nelder-Mead')
-# optim(rep(0.1,7),fn = ll_t, gr = ll_grt_t,  method = 'L-BFGS-B')
+fit_t <- optim(rep(0.1,7),fn = ll_t, gr = ll_grt_t,  method = 'L-BFGS-B')
 
 fit_t
 

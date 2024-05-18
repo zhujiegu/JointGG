@@ -1,6 +1,4 @@
 library(nlme)
-library(fitdistrplus)
-
 
 get_reffects_var <- function(model_fit , dat_i){
   corr.mat=diag(1,nrow(dat_i)) 
@@ -27,9 +25,3 @@ get_reffects_var <- function(model_fit , dat_i){
 ##############################################################################
 
 #########################################
-# testing
-y <- rgengamma(1000, mu=1, sigma=0.5, Q = 0.3)
-
-dmy_gg <- function(x,mu,sig,q) dgengamma(x, mu = mu, sigma = sig, Q=q, log = F)
-mledist(y,"my_gg",start=list(mu=1,sig=1,q=1), optim.method = 'BFGS')
-
