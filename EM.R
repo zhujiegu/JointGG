@@ -41,7 +41,7 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
       if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
       if(abs(logl[i]-logl[i-1]) < tol) break
     }
-    if(i %in% c(1, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+    if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
     }
     # solve(0)

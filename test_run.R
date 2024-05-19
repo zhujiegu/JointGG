@@ -16,9 +16,6 @@ seed=1
 visits_time=c(seq(6,60,by=6))/12
 cens_time=5
 
-Nr.cores=10
-GH_level=9
-
 # params_specify <- list(
 #   G=diag(c(0.2,0.2)),
 #   a0=4,
@@ -46,11 +43,8 @@ params_true <- params_generate('specify', params_specify=params_specify)
 
 dat <- do.call(simDataJ, c(list(n = n, seed = seed, visits_time=visits_time, cens_time=cens_time), params_true))
 
-init_params <- 'two-stage'
-tol=1e-3
-steps=20
-Nr.core=1
-model_complex='normal'
+
+fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=20, Nr.cores=1, model_complex='normal', GH_level=7)
 
 
 

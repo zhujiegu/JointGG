@@ -68,6 +68,17 @@ fit_survival <- function(dat, model_complex, reffects.individual){
 
 
 ll_t <- function(params_vec, dat, model_complex, reffects.individual){
+  if(model_complex=='normal'){
+    ll_param <- function(params_vec){
+      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
+      beta_sigma=c(params_vec[5],params_vec[6],0,0)
+      beta_q=c(params_vec[7],0,0,0)
+      return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
+    }
+    param_vec_reduce <- function(full_vec){
+      return(full_vec[c(1,2,3,4,5,6,9)])  #positions in c(beta_mu, beta_sigma, beta_q)
+    }
+  }
   ll_param <- ll_param(params_vec)
   beta_mu <- ll_param$beta_mu
   beta_sigma <- ll_param$beta_sigma
@@ -98,6 +109,17 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual){
 }
 
 ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual){
+  if(model_complex=='normal'){
+    ll_param <- function(params_vec){
+      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
+      beta_sigma=c(params_vec[5],params_vec[6],0,0)
+      beta_q=c(params_vec[7],0,0,0)
+      return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
+    }
+    param_vec_reduce <- function(full_vec){
+      return(full_vec[c(1,2,3,4,5,6,9)])  #positions in c(beta_mu, beta_sigma, beta_q)
+    }
+  }
   ll_param <- ll_param(params_vec)
   beta_mu <- ll_param$beta_mu
   beta_sigma <- ll_param$beta_sigma
