@@ -117,7 +117,6 @@ aGH_Q_grt_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, l
       #######################################
       phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
       phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
-      
       #################################################
       # #tesing
       # if(is.na(phi_w))  browser()
@@ -151,97 +150,132 @@ aGH_Q_grt_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, l
   return(results)
 }
 
-# # E[d log f(V_i,Delta_i)/d \beta]
-# aGH_Q_grt_beta <- function(Nr.cores=1, beta_type=c('mu','sigma','q'), dat_perID_t, params, list_com, n_w_adj, 
-#                            list_likl,model_complex){
-#   beta_type = match.arg(beta_type)
-#   # IDs <- names(dat_perID_t)
-#   beta_mu <- params$beta_mu
-#   beta_sigma <- params$beta_sigma
-#   beta_q <- params$beta_q
-#   k=length(n_w_adj[[1]]$w)
-#   list_f <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
-#     f_t <- lapply(1:k, function(row){ #value of an individual on every node
-#       r=n_w_adj[[i]]$n[row,]
-#       
-#       if(model_complex=='saturated'){
-#         z_mu =z_sigma = z_q = cbind(1, dat_perID_t[[i]]$treat, r) %>% as.matrix
-#       }
-#       if(model_complex=='normal'){
-#         z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
-#         z_sigma = z_q = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
-#       }
-#       if(model_complex=='test'){
-#         z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
-#       }
-#       
-#       mu <- z_mu %*% beta_mu %>% as.numeric
-#       sigma <- exp(z_sigma %*% beta_sigma) %>% as.numeric
-#       q <- exp(z_q %*% beta_q) %>% as.numeric
-#       ww=(log(dat_perID_t[[i]]$times)-mu)/sigma
-#       
-#       #######################################
-#       # # testing
-#       # z <- c(1, 1, 0.1, 0.1)
-#       # mu <- z %*% beta_mu %>% as.numeric
-#       # sigma <- exp(z %*% beta_sigma) %>% as.numeric
-#       # q <- exp(z %*% beta_q) %>% as.numeric
-#       # ww=(log(3)-mu)/sigma
-#       #######################################
-#       
-#       if(beta_type=='mu'){
-#         # use exp(log(phi)) to increase stability
-#         # phi_w=-exp(log(q)-log(pracma::incgam(q^-2*exp(q*ww), q^-2)) + (q^-2)*log(q^-2)+(q^-2)*(q*ww-exp(q*ww)))
-#         phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-#         #################################################
-#         # #tesing
-#         # if(is.na(phi_w))  browser()
-#         # stop(cat(paste0('z=',z, ', mu=',mu, ', sigma=',sigma, ', q=',q, ', w=', ww, '\n', 
-#         #                 'values not realistic, use realistic data or use adaptive quadrature')))
-#         #################################################
-#         if(!is.finite(phi_w)){
-#           warning('unrealistic gradient of beta_mu evaluated at some node, use realistic data or use adaptive quadrature')
-#           grd <- z_mu*0
-#         }else{
-#           grd <- if(dat_perID_t[[i]]$status==1){-z_mu/(q*sigma)*(1-exp(q*ww))} else{-z_mu*phi_w/sigma} 
-#         }
-#       }
-#       if(beta_type=='sigma'){
-#         phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-#         if(!is.finite(phi_w)){
-#           warning('unrealistic gradient of beta_sigma evaluated at some node, use realistic data or use adaptive quadrature')
-#           grd <- z_sigma*0
-#         }else{
-#           grd<- if(dat_perID_t[[i]]$status==1){-z_sigma*(1+ww/q*(1-exp(q*ww)))} else{-z_sigma*ww*phi_w}
-#         }
-#       }
-#       if(beta_type=='q'){
-#         phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
-#         #################################################
-#         # #tesing
-#         # if(is.na(phi_q))  browser()
-#         # if(is.na(phi_q)) stop(cat(paste0('z=',z, ', mu=',mu, ', sigma=',sigma, ', q=',q, ', w=', ww, '\n', 'values not realistic, use realistic data or use adaptive quadrature')))
-#         #################################################
-#         if(!is.finite(phi_q)){
-#           warning('unrealistic gradient of beta_q evaluated at some node, use realistic data or use adaptive quadrature')
-#           grd <- z_q*0
-#         }else{
-#           grd<- if(dat_perID_t[[i]]$status==1){z_q*q^-2*(q^2+2*digamma(q^-2)+4*log(q)-2-q*ww+2*exp(q*ww)-q*ww*exp(q*ww))}else{
-#             z_q*q*(phi_q+2*q^-3*digamma(q^-2))
-#           }
-#         }
-#       }
-#       return(grd)
-#     })
-#   })
-#   
-#   # multiply by the common part in GH
-#   # Apply this function across the corresponding elements of list_f and common_part$list_com
-#   results <- Map(multiply_sum_matrices, list_f, list_com)
-#   # Devide by the marginal likelihood and sum over individuals to get the final expectation
-#   results <- Reduce('+', Map('/', results, list_likl)) %>% as.matrix %>% as.vector
-#   return(results)
-# }
+
+# observed information matrix of beta (including mu, sigma, q)
+aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex){
+  # IDs <- names(dat_perID_t)
+  beta_mu <- params$beta_mu
+  beta_sigma <- params$beta_sigma
+  beta_q <- params$beta_q
+  k=length(n_w_adj[[1]]$w)
+  IDs <- names(dat_perID_t)
+  
+  
+  list_grt <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
+    grt_t <- lapply(1:k, function(row){ #value of an individual on every node
+      r=n_w_adj[[i]]$n[row,]
+      
+      if(model_complex=='saturated'){
+        z_mu =z_sigma = z_q = cbind(1, dat_perID_t[[i]]$treat, r) %>% as.matrix
+      }
+      if(model_complex=='normal'){
+        z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
+        z_sigma = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
+        z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
+      if(model_complex=='test'){
+        z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
+      
+      mu <- z_mu %*% beta_mu %>% as.numeric
+      sigma <- exp(z_sigma %*% beta_sigma) %>% as.numeric
+      q <- exp(z_q %*% beta_q) %>% as.numeric
+      ww=(log(dat_perID_t[[i]]$times)-mu)/sigma
+      
+      phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
+      phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
+
+      if(!is.finite(phi_w)){
+        warning('unrealistic gradient of Gamma(a,x) wrt w evaluated at some node, use realistic data or use adaptive quadrature')
+        grd_mu = grd_sigma = z_mu*0
+      }else{
+        grd_mu <- if(dat_perID_t[[i]]$status==1){-z_mu/(q*sigma)*(1-exp(q*ww))} else{-z_mu*phi_w/sigma}
+        grd_sigma <- if(dat_perID_t[[i]]$status==1){-z_sigma*(1+ww/q*(1-exp(q*ww)))} else{-z_sigma*ww*phi_w}
+      }
+      if(!is.finite(phi_q)){
+        warning('unrealistic gradient of Gamma(a,x) wrt q evaluated at some node, use realistic data or use adaptive quadrature')
+        grd_q <- z_q*0
+      }else{
+        grd_q <- if(dat_perID_t[[i]]$status==1){z_q*q^-2*(q^2+2*digamma(q^-2)+4*log(q)-2-q*ww+2*exp(q*ww)-q*ww*exp(q*ww))}else{
+          z_q*q*(phi_q+2*q^-3*digamma(q^-2))
+        }
+      }
+      grd <- beta_vec_transform(c(grd_mu,grd_sigma,grd_q), model_complex, 'collapse')
+      return(grd)
+    })
+  })
+  names(list_grt) <- IDs
+  list_grt2 <- lapply(list_grt, function(i) lapply(i, function(e) tcrossprod(e)))
+  # E[S_i(beta)]
+  list_grt <- Map(multiply_sum_matrices, list_grt, list_com)
+  list_grt <- Map('/', list_grt, list_likl)
+  # E[S_i(beta)S_i(beta)']
+  list_grt2 <- Map(multiply_sum_matrices, list_grt2, list_com)
+  list_grt2 <- Map('/', list_grt2, list_likl)
+  
+  #############################################################
+  # hessian of log f(V,Delta|b)
+  vec_beta <- beta_vec_transform(c(beta_mu, beta_sigma, beta_q), model_complex, 'collapse') # reduced beta vector
+  list_hessian <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
+    hes_t <- lapply(1:k, function(row){ #value of an individual on every node
+      r=n_w_adj[[i]]$n[row,]
+      
+      if(model_complex=='saturated'){
+        z_mu =z_sigma = z_q = cbind(1, dat_perID_t[[i]]$treat, r) %>% as.matrix
+      }
+      if(model_complex=='normal'){
+        z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
+        z_sigma = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
+        z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
+      if(model_complex=='test'){
+        z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
+      
+      hes_t <- hessian(func = function(vec){
+        betas <- beta_vec_to_param(vec, model_complex)
+        beta_mu <- betas$beta_mu
+        beta_sigma <- betas$beta_sigma
+        beta_q <- betas$beta_q
+        
+        mu <- z_mu %*% beta_mu %>% as.numeric
+        sigma <- exp(z_sigma %*% beta_sigma) %>% as.numeric
+        q <- exp(z_q %*% beta_q) %>% as.numeric
+        ww=(log(dat_perID_t[[i]]$times)-mu)/sigma
+        
+        ifelse(dat_perID_t[[i]]$status==1, flexsurv::dgengamma(dat_perID_t[[i]]$times, mu = mu, sigma = sigma, Q=q, log = T),
+               flexsurv::pgengamma(dat_perID_t[[i]]$times, mu = mu, sigma = sigma, Q=q, lower.tail = F, log = T))
+      }, x=vec_beta)
+      return(hes_t)
+    })
+  })
+  names(list_hessian) <- IDs
+  # # E[B_i(beta)]
+  list_hessian <- Map(multiply_sum_matrices, list_hessian, list_com)
+  list_hessian <- Map('/', list_hessian, list_likl)
+  
+  # assemble
+  term1 <- - Reduce('+', list_hessian)
+
+  term2 <- Reduce('+', list_grt2)
+  
+  term3 <- matrix(0, nrow = length(list_grt[[1]]), ncol = length(list_grt[[1]]))
+  # Loop through each unique pair (i, j) where i != j
+  for (ii in seq_along(list_grt)) {
+    for (jj in seq_along(list_grt)) {
+      if (ii != jj) {
+        # Calculate the cross product of the two vectors
+        current_crossprod <- tcrossprod(list_grt[[ii]],list_grt[[jj]])
+        # Add the current cross product to the sum matrix
+        term3 <- term3 + current_crossprod
+      }
+    }
+  }
+ 
+  results <- term1 - term2 - term3
+  solve(results)
+  return(results)
+}
 
 
 # produce adjusted notes and weights
@@ -258,7 +292,7 @@ aGH_n_w <- function(reffects.individual, var.reffects, Nr.cores=1, GH_level=9, d
   # expand grid
   nodes <- as.matrix(expand.grid(rep(list(GH$x), b_dim)))
   w <- as.matrix(expand.grid(rep(list(GH$w), b_dim))) 
-  # \sqrt(2)w*exp(||nodes||^2)
+  # 2^(p/2) w*exp(||nodes||^2)
   w <- 2^(b_dim/2)*apply(w, 1, prod)*exp(rowSums(nodes*nodes))
 
   n_w_adj <- mclapply(IDs, mc.cores = Nr.cores, function(i){
@@ -270,17 +304,6 @@ aGH_n_w <- function(reffects.individual, var.reffects, Nr.cores=1, GH_level=9, d
     return(aGH_nodes)
   })
   names(n_w_adj) <- IDs
-  
-  # # visulize the nodes
-  # if(plot_nodes){
-  #   plot(nodes_adj[[6]]$aGH_nodes, cex=nodes_adj[[6]]$aGH_w, pch=19,
-  #        xlab=expression(x[1]),
-  #        ylab=expression(x[2]))
-  # }
-  # 
-  # browser()
-  
-  # nodes <- lapply(seq_len(nrow(nodes)), function(i) nodes[i, ,drop=F])
   return(n_w_adj)
 }
 
@@ -357,7 +380,7 @@ multiply_sum_matrices <- function(matrices, scalars) {
 adjust_nodes <- function(mu_b_i, var_b_i, nodes, w){
   # the lower triangle L
   L = chol(var_b_i) %>% t
-  # \sqrt(2)|L|w*exp(||nodes||^2)
+  # 2^(p/2)|L|w*exp(||nodes||^2)
   w_i = det(L)*w
   # mu + \sqrt(2)L*node 
   nodes_i = slice(mu_b_i, rep(1, nrow(nodes)))  + sqrt(2)*t(L%*%t(nodes))

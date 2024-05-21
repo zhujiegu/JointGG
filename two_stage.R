@@ -6,12 +6,12 @@
 # fitting longitudinal
 fit_longitudinal <- function(dat){
   print('start fitting longitudinal data in two-stage')
-  fit_y = lme(value ~ 1 + visits_time + treat:visits_time,  
-              random=~ 1 + visits_time|ID,
-              weights=varIdent(form=~1|exposure),
-              data = dat$longitudinal,
-              control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-8,
-                                   msMaxEval=1000, niterEM = 50))
+  fit_y = suppressMessages(lme(value ~ 1 + visits_time + treat:visits_time,  
+                               random=~ 1 + visits_time|ID,
+                               weights=varIdent(form=~1|exposure),
+                               data = dat$longitudinal,
+                               control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-8,
+                                                    msMaxEval=1000, niterEM = 50)))
   # sometimes this does not converge, use try in pipeline
   ################################
   # extract BLUPs and variance of random effects
@@ -46,43 +46,66 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   ###############################
   # define which betas need to be updated based on the complexity of the model
   if(model_complex=='normal'){
-    ll_param <- function(params_vec){
-      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
-      beta_sigma=c(params_vec[5],params_vec[6],0,0)
-      beta_q=c(params_vec[7],0,0,0)
-      return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
+    # Initialize parameters
+    initial_params <- rep(0.1, 7)
+    count <- 0
+    # Start optimization with error handling
+    repeat{
+      count <- count + 1
+      try({
+        fit_t <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
+                       gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual),  method = 'L-BFGS-B')
+        if(!is.null(fit_t$convergence) && fit_t$convergence == 0) {
+          break
+        } else{
+          print("Optimization in two-stage survival failed, retrying with new parameters...")
+          initial_params <- runif(7, 0, 2)  # New random initial parameters
+        }
+      }, silent = TRUE)
+      if (count >= 3) {
+        print("In two-stage survival fit, L-BFGS-B failed.")
+        fit_t <- NULL
+        break
+      }
     }
-    param_vec_reduce <- function(full_vec){
-      return(full_vec[c(1,2,3,4,5,6,9)])  #positions in c(beta_mu, beta_sigma, beta_q)
+    # try Nelder-Mead
+    if(is.null(fit_t)){
+      print('Trying Nelder-Mead now')
+      count <- 0
+      repeat{
+        count <- count + 1
+        try({
+          fit_t <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
+                         method = 'Nelder-Mead')
+          if(!is.null(fit_t$convergence) && fit_t$convergence == 0) {
+            break
+          } else{
+            initial_params <- runif(7, 0, 2)  # New random initial parameters
+          }
+        }, silent = TRUE)
+        if (count >= 3) {
+          print("In two-stage survival fit, Nelder-Mead also failed.")
+          fit_t <- list(par=rep(0.1, 7))
+          break
+        }
+      }
     }
-    fit_t <- optim(rep(0.1,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-                   gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual),  method = 'L-BFGS-B')
+
   }
   if(model_complex=='saturated'){
     stop('two-step to be completed')
   }
   print('finish fitting survival data in two-stage')
-  
-  return(ll_param(fit_t$par))
+  betas <- beta_vec_to_param(fit_t$par, model_complex)
+  return(betas)
 }
 
 
 ll_t <- function(params_vec, dat, model_complex, reffects.individual){
-  if(model_complex=='normal'){
-    ll_param <- function(params_vec){
-      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
-      beta_sigma=c(params_vec[5],params_vec[6],0,0)
-      beta_q=c(params_vec[7],0,0,0)
-      return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
-    }
-    param_vec_reduce <- function(full_vec){
-      return(full_vec[c(1,2,3,4,5,6,9)])  #positions in c(beta_mu, beta_sigma, beta_q)
-    }
-  }
-  ll_param <- ll_param(params_vec)
-  beta_mu <- ll_param$beta_mu
-  beta_sigma <- ll_param$beta_sigma
-  beta_q <- ll_param$beta_q
+  betas <- beta_vec_to_param(params_vec, model_complex)
+  beta_mu <- betas$beta_mu
+  beta_sigma <- betas$beta_sigma
+  beta_q <- betas$beta_q
   dat_t <- dat$survival
   n=nrow(dat_t)
   f_t <- c()
@@ -109,21 +132,11 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual){
 }
 
 ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual){
-  if(model_complex=='normal'){
-    ll_param <- function(params_vec){
-      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
-      beta_sigma=c(params_vec[5],params_vec[6],0,0)
-      beta_q=c(params_vec[7],0,0,0)
-      return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
-    }
-    param_vec_reduce <- function(full_vec){
-      return(full_vec[c(1,2,3,4,5,6,9)])  #positions in c(beta_mu, beta_sigma, beta_q)
-    }
-  }
-  ll_param <- ll_param(params_vec)
-  beta_mu <- ll_param$beta_mu
-  beta_sigma <- ll_param$beta_sigma
-  beta_q <- ll_param$beta_q
+
+  betas <- beta_vec_to_param(params_vec, model_complex)
+  beta_mu <- betas$beta_mu
+  beta_sigma <- betas$beta_sigma
+  beta_q <- betas$beta_q
   dat_t <- dat$survival
   n=nrow(dat_t)
   grd_mu <- grd_sigma <-grd_q <- matrix(NA, nrow=n, ncol=4)
@@ -161,23 +174,9 @@ ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual){
       z_q*q*(phi_q+2*(q^-3)*digamma(q^-2))}
   }
   grd <- c(colSums(grd_mu), colSums(grd_sigma), colSums(grd_q))
-  return(-param_vec_reduce(grd)) # - correspods to minus log ll
+  grd_reduce <- beta_vec_transform(grd, model_complex, 'collapse')
+  return(-grd_reduce) # - correspods to minus log ll
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 get_reffects_var <- function(model_fit , dat_i){
@@ -199,9 +198,48 @@ get_reffects_var <- function(model_fit , dat_i){
   return(var.reffects)
 }
 
+beta_vec_to_param <- function(params_vec, model_complex){
+  if(model_complex=='normal'){
+    beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
+    beta_sigma=c(params_vec[5],params_vec[6],0,0)
+    beta_q=c(params_vec[7],0,0,0)
+  }
+  return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
+}
 
-##############################################################################
-# fit survival data
-##############################################################################
+beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand')){
+  type=match.arg(type)
+  if(model_complex=='normal'){
+    keep <- c(1,2,3,4,5,6,9) #positions in c(beta_mu, beta_sigma, beta_q)
+    if(type == 'expand'){
+      result <- rep(0,12)
+      result[keep] <- vec
+    }else{
+      result <- vec[keep]
+    }
+  }else{
+    stop('add other model complexity')
+  }
+  return(result)
+}
 
-#########################################
+# expand hessian of beta to full size (incerting zeros)
+beta_hes_transform <- function(hes, model_complex, type=c('collapse', 'expand')){
+  type=match.arg(type)
+  if(model_complex=='normal'){
+    keep <- c(1,2,3,4,5,6,9)
+    if(type == 'expand'){
+      result <- matrix(0, nrow=12, ncol=12)
+      result[keep, keep] <- hes
+    }else{
+      result <- hes[keep, keep]
+    }
+  }else{
+    stop('add other model complexity')
+  }
+  return(result)
+}
+
+
+
+

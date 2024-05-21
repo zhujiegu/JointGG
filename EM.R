@@ -19,20 +19,23 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
                         beta_q=fit_t$beta_q)
   }
   params <- init_params
-  params_max <- params
   logl <- c()
   ####################################
-  # testing
-  params_list <- list()
+  # # testing
+  # params_list <- list()
   ##################################
   
+  IDs <- unique(dat$longitudinal$ID)
+  dat_perID_t <- split(dat$survival, dat$survival$ID)
+  dat_perID_t <- dat_perID_t[IDs]
+  
   for(i in 1:steps){
-    step_outp = EM_step(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-    params_next = step_outp$params
+    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+    params = step_outp$params
     
     ##################################
-    # testing 
-    params_list[[i]] <- params_next
+    # # testing 
+    # params_list[[i]] <- params
     ##################################
     
     logl[i] = step_outp$likl_log
@@ -44,19 +47,70 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
     if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
     }
-    # solve(0)
-    if(logl[i] == max(logl[1:i])) params_max <- params_next
-    params = params_next
   }
+  
+  # # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
+  # for(i in 1:floor(0.9*steps)){
+  #   step_outp = EM_step(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+  #   params = step_outp$params
+  #   
+  #   ##################################
+  #   # testing 
+  #   params_list[[i]] <- params
+  #   ##################################
+  #   
+  #   logl[i] = step_outp$likl_log
+  #   
+  #   if(i > 1){
+  #     if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
+  #     if(abs(logl[i]-logl[i-1]) < 10*tol) break
+  #   }
+  #   if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+  #     print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
+  #   }
+  # }
+  # print(paste('stage I of EM complete, Nr. step =', i, 'Now switch to full-adaptive GH'))
+  # # stage one, using adaptive GH (posterior of b conditional on full data)
+  # for(j in (i+1):steps){
+  #   # update node every step
+  #   n_w_adj2 <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+  #   
+  #   step_outp = EM_step(dat, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj2,  model_complex)
+  #   params = step_outp$params
+  #   
+  #   ##################################
+  #   # testing 
+  #   params_list[[j]] <- params
+  #   ##################################
+  #   
+  #   logl[j] = step_outp$likl_log
+  #   
+  #   
+  #   if(logl[j]-logl[j-1] < 0) print(paste('Decrease in log likelihood in step',j))
+  #   if(abs(logl[j]-logl[j-1]) < tol) break
+  #   if(j %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+  #     print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
+  #   }
+  # }
+  
+  print('EM finished, starting computing observed information matrix')
+  list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
+  # likelihood of each sample
+  list_likl <- lapply(list_com, function(e){
+    return(sum(e))
+  })
+  # Observed information matrix
+  I_beta <-aGH_I_beta(Nr.cores, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+  I_beta <- beta_hes_transform(I_beta, model_complex, 'expand')
   
   message("Nr steps was ", i)
   message("Log-likelihood: ", logl[i])
-  outputt <- list(params = params, E_b=step_outp$E_b, logl = logl, params_list=params_list, model_complex=model_complex, GH_level=GH_level) #, debug = debug_list)
+  outputt <- list(params = params, I_beta = I_beta, E_b=step_outp$E_b, logl = logl, model_complex=model_complex, GH_level=GH_level) #, debug = debug_list)
   class(outputt) <- "JMGG"
   return(outputt)
 }
 
-EM_step <- function(dat, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
+EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
 
   # Numerical integration of the common part and store the results (all sample combined)
   list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
@@ -69,13 +123,9 @@ EM_step <- function(dat, params, GH_level, Nr.cores, n_w_adj, model_complex=c('s
   likl_log <- sapply(list_likl, log) %>% sum
 
   ##################################################################
-  # Start ECM for survival parameters here, E and cyclic update of betas
+  # Start EM for survival parameters here
   ##################################################################
   IDs <- unique(dat$longitudinal$ID)
-  dat_perID_y <- split(dat$longitudinal, dat$longitudinal$ID)
-  dat_perID_y <- dat_perID_y[IDs]
-  dat_perID_t <- split(dat$survival, dat$survival$ID)
-  dat_perID_t <- dat_perID_t[IDs]
   # Backtracking rule sequentially to find the step size for mu, sigma, q, consecutively.
   #########################################
   # mu
@@ -122,7 +172,7 @@ EM_step <- function(dat, params, GH_level, Nr.cores, n_w_adj, model_complex=c('s
   colnames(df_E_b) <- c("Eb0", "Eb1", "ID")
   
   E_bb <- aGH_b(moment='second', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
-  df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as.tibble
+  df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as_tibble
   df_E_bb$ID <- names(E_b)
   # browser()
   #a0
