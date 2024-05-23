@@ -97,6 +97,10 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   }
   print('finish fitting survival data in two-stage')
   betas <- beta_vec_to_param(fit_t$par, model_complex)
+  print(paste0('initial betas_mu: ', betas$beta_mu))
+  print(paste0('initial betas_sigma: ', betas$beta_sigma))
+  print(paste0('initial betas_q: ', betas$beta_q))
+  
   return(betas)
 }
 
