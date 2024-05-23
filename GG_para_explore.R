@@ -5,14 +5,15 @@ library(ggplot2)
 # GG
 #########################################################################
 # Define a sequence of y values for the log-transformed variable
-x_values <- seq(0, 2, length.out = 400)
+x_values <- seq(0, 100, length.out = 100000)
 
 # Define shape parameters to compare
-shape_parameters <- c(0.1, 1, 2)
+shape_parameters <- c(1)
 
 # Compute the PDF values for the log-transformed generalized gamma distribution
 pdf_values <- sapply(shape_parameters, function(shape) {
-  dgengamma(x_values, mu = 1, sigma = 1, Q = shape)
+  # dgengamma(x_values, mu = 2, sigma = 3, Q = shape)
+  pgengamma(x_values, mu = 2, sigma = 3, Q = shape, lower.tail = F)
 })
 
 # Create a data frame for plotting
@@ -23,13 +24,13 @@ plot_data <- data.frame(
 )
 
 # Plot using ggplot2
-ggplot(plot_data, aes(x = x, y = pdf, color = shape)) +
+ggplot(plot_data, aes(x = x, y = pdf)) +
   geom_line() +
-  labs(title = "PDF of Log-Generalized Gamma Distribution with Various Shape Parameters",
-       x = "x",
-       y = "Probability Density",
-       color = "Shape Parameter") +
+  labs(title = "PDF of Generalized Gamma Distribution (mu=2, sigma=3, q=1)",
+       x = "Survival time",
+       y = "Probability Density") +
   theme_minimal()
+
 
 #########################################################################
 # GLG

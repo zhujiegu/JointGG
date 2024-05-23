@@ -12,6 +12,7 @@ source('dat_generate.R')
 source('EM.R')
 source('aGH_functions.R')
 source('two_stage.R')
+source('test_statistic.R')
 
 n=300
 seed=1
@@ -35,7 +36,7 @@ params_specify <- list(
   a1=0.5,
   a2=-0.2,
   sig_e2=1,
-  beta_mu=c(1,0.5,0.8, 0.6),
+  beta_mu=c(1,2,0.8, 0.6),
   beta_sigma=c(0.5,0.5,0,0),
   beta_q=c(0.1,0,0,0)
 )
@@ -48,11 +49,34 @@ dat <- do.call(simDataJ, c(list(n = n, seed = seed, visits_time=visits_time, cen
 
 fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=50, Nr.cores=1, model_complex='normal', GH_level=5)
 
-test <- z_statistic(fit, GH_level_z=9)
+test <- z_statistic(fit, up_limit = 120, GH_level_z=11)
+var_test <- as.numeric(matrix(test$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%
+  matrix(test$delta_mean_grt, ncol = 1))
+z_score <- test$delta_mean_t/sqrt(var_test)
+z_score
+# test_n <- z_statistic_naive(fit, up_limit = 100)
+# as.numeric(matrix(test_n$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%
+#   matrix(test_n$delta_mean_grt, ncol = 1))
 
-var_test <- matrix(test$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%
-  matrix(test$delta_mean_grt, ncol = 1)
+#############################
+#test
+a=exp(mu-sigma*log(q^(-2)/q))
+d=1/(q*sigma)
+p=q/sigma
+x=0.0001
 
+x <- 100
+y_values <- p/gamma(d/p)*a^(-d)*x^(d-1)*exp(-(x/a)^p)
+plot(x, y_values)
+
+a*gamma((d+1)/p)/gamma(d/p)
+
+integrate(integrand, lower = 0, upper = Inf)
+
+
+integrand <- function(x) x * p/gamma(d/p)*a^(-d)*x^(d-1)*exp(-(x/a)^p)
+
+dgengamma(x, mu,sigma,q, log = F)
 
 #####################################################################################
 # test the nodes using two-stage or JM
