@@ -1,4 +1,13 @@
 library(JMbayes)
+library(tibble)
+library(MASS)
+library(dplyr)
+library(magrittr)
+library(flexsurv)
+library(purrr)
+library(nlme)
+library(parallel)
+library(numDeriv)
 
 data(prothro)
 data(prothros)
@@ -19,16 +28,9 @@ dat_y %<>% mutate(treat=ifelse(treat=='prednisone', 1,0))
 dat=list(longitudinal=as_tibble(dat_y), survival=as_tibble(dat_t))
 
 all.equal(unique(dat$longitudinal$ID), dat$survival$ID)
+save(dat, file='prothro.RData')
 
-library(tibble)
-library(MASS)
-library(dplyr)
-library(magrittr)
-library(flexsurv)
-library(purrr)
-library(nlme)
-library(parallel)
-library(numDeriv)
+
 
 source('dat_generate.R')
 source('EM.R')
@@ -36,7 +38,7 @@ source('aGH_functions.R')
 source('two_stage.R')
 source('test_statistic.R')
 
-fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=50, Nr.cores=1, model_complex='normal', GH_level=5)
+fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', GH_level=5)
 
 test <- z_statistic(fit, up_limit = 120, GH_level_z=11)
 var_test <- as.numeric(matrix(test$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%
