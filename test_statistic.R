@@ -225,5 +225,5 @@ z_statistic_naive <- function(model_fit, up_limit){
 
 mean_t <- function(mu, sigma, q, up_limit=100){
   t <- integrate(f = function(x) pgengamma(x,mu,sigma,q, lower.tail = F), lower = 0, upper = up_limit)
-  return(t)
+  return(t$value)
 }

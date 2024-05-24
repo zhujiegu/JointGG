@@ -7,6 +7,7 @@ library(purrr)
 library(nlme)
 library(parallel)
 library(numDeriv)
+select <- dplyr::select
 
 source('dat_generate.R')
 source('EM.R')
@@ -16,7 +17,7 @@ source('test_statistic.R')
 
 n=300
 seed=1
-visits_time=c(seq(6,60,by=6))/12
+visits_time=c(seq(0,60,by=6))/12
 cens_time=5
 
 # params_specify <- list(
@@ -31,25 +32,25 @@ cens_time=5
 # )
 
 params_specify <- list(
-  G=diag(c(0.5,0.1)),
-  a0=4,
-  a1=0.5,
-  a2=-0.2,
-  sig_e2=1,
-  beta_mu=c(1,2,0.8, 0.6),
-  beta_sigma=c(0.5,0.5,0,0),
-  beta_q=c(0.1,0,0,0)
+  G=diag(c(25,1)),
+  a0=110,
+  a1=2,
+  a2=-4,
+  sig_e2=10,
+  beta_mu=c(1.8, 0.2, 0.01, 0.1),
+  beta_sigma=c(0.2, -0.03,0,0),
+  beta_q=c(-0.15,0,0,0)
 )
 
 params_true <- params_generate('specify', params_specify=params_specify)
 
 
-dat <- do.call(simDataJ, c(list(n = n, seed = seed, visits_time=visits_time, cens_time=cens_time), params_true))
+dat <- do.call(simData_GG, c(list(n = n, seed = seed, visits_time=visits_time, cens_time=cens_time), params_true))
 
 
-fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=50, Nr.cores=1, model_complex='normal', GH_level=5)
+fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', GH_level=5)
 
-test <- z_statistic(fit, up_limit = 120, GH_level_z=11)
+test <- z_statistic(fit, up_limit = 10, GH_level_z=11)
 var_test <- as.numeric(matrix(test$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%
   matrix(test$delta_mean_grt, ncol = 1))
 z_score <- test$delta_mean_t/sqrt(var_test)

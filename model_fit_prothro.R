@@ -8,6 +8,7 @@ library(purrr)
 library(nlme)
 library(parallel)
 library(numDeriv)
+select <- dplyr::select
 
 data(prothro)
 data(prothros)
@@ -40,7 +41,7 @@ source('test_statistic.R')
 
 fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', GH_level=5)
 
-test <- z_statistic(fit, up_limit = 120, GH_level_z=11)
+test <- z_statistic(fit, up_limit = 80, GH_level_z=11)
 var_test <- as.numeric(matrix(test$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%
                          matrix(test$delta_mean_grt, ncol = 1))
 z_score <- test$delta_mean_t/sqrt(var_test)

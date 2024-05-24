@@ -47,49 +47,44 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   # define which betas need to be updated based on the complexity of the model
   if(model_complex=='normal'){
     # Initialize parameters
-    initial_params <- rep(0.1, 7)
-    count <- 0
+
+    fit_t_no_reff <- optim(rep(0.8,5),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
+                           gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  method = 'L-BFGS-B')
+    fit_t_no_reff<- c(fit_t_no_reff$par[1:2],0,0, fit_t_no_reff$par[3:5])
     # Start optimization with error handling
-    repeat{
-      count <- count + 1
-      try({
-        fit_t <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-                       gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual),  method = 'L-BFGS-B')
-        if(!is.null(fit_t$convergence) && fit_t$convergence == 0) {
-          break
-        } else{
-          print("Optimization in two-stage survival failed, retrying with new parameters...")
-          initial_params <- runif(7, 0, 2)  # New random initial parameters
-        }
-      }, silent = TRUE)
-      if (count >= 3) {
-        print("In two-stage survival fit, L-BFGS-B failed.")
-        fit_t <- NULL
-        break
+    try({
+      # fit_t_tmp <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), method = 'L-BFGS-B')
+      fit_t_tmp <- optim(fit_t_no_reff,fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
+                         gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual),  method = 'L-BFGS-B')
+      if(!is.null(fit_t_tmp$convergence) && fit_t_tmp$convergence == 0) {
+        fit_t <- fit_t_tmp
+      } else{
+        print("Optimization in two-stage survival failed, method: L-BFGS-B")
+        fit_t <-  fit_t_no_reff
       }
-    }
-    # try Nelder-Mead
-    if(is.null(fit_t)){
-      print('Trying Nelder-Mead now')
-      count <- 0
-      repeat{
-        count <- count + 1
-        try({
-          fit_t <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-                         method = 'Nelder-Mead')
-          if(!is.null(fit_t$convergence) && fit_t$convergence == 0) {
-            break
-          } else{
-            initial_params <- runif(7, 0, 2)  # New random initial parameters
-          }
-        }, silent = TRUE)
-        if (count >= 3) {
-          print("In two-stage survival fit, Nelder-Mead also failed.")
-          fit_t <- list(par=rep(0.1, 7))
-          break
-        }
-      }
-    }
+    }, silent = TRUE)
+    # # try Nelder-Mead
+    # if(is.null(fit_t)){
+    #   print('Trying Nelder-Mead now')
+    #   count <- 0
+    #   repeat{
+    #     count <- count + 1
+    #     try({
+    #       fit_t <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
+    #                      method = 'Nelder-Mead')
+    #       if(!is.null(fit_t$convergence) && fit_t$convergence == 0) {
+    #         break
+    #       } else{
+    #         initial_params <- runif(7, 0, 2)  # New random initial parameters
+    #       }
+    #     }, silent = TRUE)
+    #     if (count >= 3) {
+    #       print("In two-stage survival fit, Nelder-Mead also failed.")
+    #       fit_t <- list(par=rep(0.1, 7))
+    #       break
+    #     }
+    #   }
+    # }
 
   }
   if(model_complex=='saturated'){
@@ -97,16 +92,21 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   }
   print('finish fitting survival data in two-stage')
   betas <- beta_vec_to_param(fit_t$par, model_complex)
-  print(paste0('initial betas_mu: ', betas$beta_mu))
-  print(paste0('initial betas_sigma: ', betas$beta_sigma))
-  print(paste0('initial betas_q: ', betas$beta_q))
+  print('initial betas_mu:') 
+  print(betas$beta_mu)
+  print('initial betas_sigma:') 
+  print(betas$beta_sigma)
+  print('initial betas_q:') 
+  print(betas$beta_q)
   
-  return(betas)
+  return(list(beta_mu=betas$beta_mu, beta_sigma=betas$beta_sigma, beta_q=betas$beta_q,
+              beta_noreff = beta_vec_to_param(fit_t_no_reff, model_complex)
+))
 }
 
 
-ll_t <- function(params_vec, dat, model_complex, reffects.individual){
-  betas <- beta_vec_to_param(params_vec, model_complex)
+ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
+  betas <- beta_vec_to_param(params_vec, model_complex, rm_reff=rm_reff)
   beta_mu <- betas$beta_mu
   beta_sigma <- betas$beta_sigma
   beta_q <- betas$beta_q
@@ -135,9 +135,9 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual){
   return(-sum(f_t))
 }
 
-ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual){
+ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
 
-  betas <- beta_vec_to_param(params_vec, model_complex)
+  betas <- beta_vec_to_param(params_vec, model_complex, rm_reff=rm_reff)
   beta_mu <- betas$beta_mu
   beta_sigma <- betas$beta_sigma
   beta_q <- betas$beta_q
@@ -163,7 +163,9 @@ ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual){
     ww=(log(dat_t[i,]$times)-mu)/sigma
     
     phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-    phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
+    if(!is.finite(log_upper_gamma_q(q, ww=ww))){phi_q=NA}else{
+      phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
+    }
     
     #################################################
     # #tesing
@@ -171,14 +173,23 @@ ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual){
     # stop(cat(paste0('z=',z, ', mu=',mu, ', sigma=',sigma, ', q=',q, ', w=', ww, '\n', 
     #                 'values not realistic, use realistic data or use adaptive quadrature')))
     #################################################
-    
-    grd_mu[i,] <- if(dat_t[i,]$status==1){-z_mu/(q*sigma)*(1-exp(q*ww))} else{-z_mu*phi_w/sigma} 
-    grd_sigma[i,] <- if(dat_t[i,]$status==1){-z_sigma*(1+ww/q*(1-exp(q*ww)))} else{-z_sigma*ww*phi_w}
-    grd_q[i,] <- if(dat_t[i,]$status==1){z_q*q^-2*(q^2+2*digamma(q^-2)+4*log(q)-2-q*ww+2*exp(q*ww)-q*ww*exp(q*ww))}else{
-      z_q*q*(phi_q+2*(q^-3)*digamma(q^-2))}
+    if(!is.finite(phi_w)){
+      warning('unrealistic gradient of Gamma(a,x) wrt w evaluated at some node, use realistic data or use adaptive quadrature')
+      grd_mu[i,] = grd_sigma[i,] = z_mu*0
+    }else{
+      grd_mu[i,] <- if(dat_t[i,]$status==1){-z_mu/(q*sigma)*(1-exp(q*ww))} else{-z_mu*phi_w/sigma} 
+      grd_sigma[i,] <- if(dat_t[i,]$status==1){-z_sigma*(1+ww/q*(1-exp(q*ww)))} else{-z_sigma*ww*phi_w}
+    }
+    if(!is.finite(phi_q)){
+      warning('unrealistic gradient of Gamma(a,x) wrt q evaluated at some node, use realistic data or use adaptive quadrature')
+      grd_q[i,] <- z_q*0
+    }else{
+      grd_q[i,] <- if(dat_t[i,]$status==1){z_q*q^-2*(q^2+2*digamma(q^-2)+4*log(q)-2-q*ww+2*exp(q*ww)-q*ww*exp(q*ww))}else{
+        z_q*q*(phi_q+2*(q^-3)*digamma(q^-2))}
+    }
   }
   grd <- c(colSums(grd_mu), colSums(grd_sigma), colSums(grd_q))
-  grd_reduce <- beta_vec_transform(grd, model_complex, 'collapse')
+  grd_reduce <- beta_vec_transform(grd, model_complex, 'collapse', rm_reff)
   return(-grd_reduce) # - correspods to minus log ll
 }
 
@@ -202,16 +213,22 @@ get_reffects_var <- function(model_fit , dat_i){
   return(var.reffects)
 }
 
-beta_vec_to_param <- function(params_vec, model_complex){
+beta_vec_to_param <- function(params_vec, model_complex, rm_reff=F){
   if(model_complex=='normal'){
-    beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
-    beta_sigma=c(params_vec[5],params_vec[6],0,0)
-    beta_q=c(params_vec[7],0,0,0)
+    if(rm_reff){
+      beta_mu=c(params_vec[1], params_vec[2],0,0)
+      beta_sigma=c(params_vec[3],params_vec[4],0,0)
+      beta_q=c(params_vec[5],0,0,0)
+    }else{
+      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
+      beta_sigma=c(params_vec[5],params_vec[6],0,0)
+      beta_q=c(params_vec[7],0,0,0) 
+    }
   }
   return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
 }
 
-beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand')){
+beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand'), rm_reff=F){
   type=match.arg(type)
   if(model_complex=='normal'){
     keep <- c(1,2,3,4,5,6,9) #positions in c(beta_mu, beta_sigma, beta_q)
@@ -224,6 +241,7 @@ beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand'))
   }else{
     stop('add other model complexity')
   }
+  if(rm_reff) result <- result[-(3:4)]
   return(result)
 }
 
