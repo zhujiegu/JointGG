@@ -4,6 +4,7 @@ library(dplyr)
 library(magrittr)
 library(flexsurv)
 library(purrr)
+library(ggplot2)
 
 #########################################################################
 # Joint model simulation
@@ -79,8 +80,8 @@ simData_GG <- function(n, seed, visits_time, cens_time, G, a0, a1, a2, sig_e2, b
   return(obj)
 }
 
-flexsurvreg(formula = Surv(Time, death) ~ 1, data = prothros, dist="gengamma")
-
-flexsurvreg(formula = Surv(Time, death) ~ 1, data = filter(prothros, treat=='prednisone'), dist="gengamma")
-flexsurvreg(formula = Surv(Time, death) ~ 1, data = filter(prothros, treat=='placebo'), dist="gengamma")
+# flexsurvreg(formula = Surv(Time, death) ~ 1, data = prothros, dist="gengamma")
+# 
+# flexsurvreg(formula = Surv(Time, death) ~ 1, data = filter(prothros, treat=='prednisone'), dist="gengamma")
+# flexsurvreg(formula = Surv(Time, death) ~ 1, data = filter(prothros, treat=='placebo'), dist="gengamma")
 

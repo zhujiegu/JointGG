@@ -185,7 +185,9 @@ aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_
       ww=(log(dat_perID_t[[i]]$times)-mu)/sigma
       
       phi_w=-q/pracma::incgam(q^-2*exp(q*ww), q^-2) *(q^-2)^(q^-2) * exp((q^-2)*(q*ww-exp(q*ww)))
-      phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
+      if(!is.finite(log_upper_gamma_q(q, ww=ww))){phi_q=NA}else{
+        phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
+      }
 
       if(!is.finite(phi_w)){
         warning('unrealistic gradient of Gamma(a,x) wrt w evaluated at some node, use realistic data or use adaptive quadrature')
