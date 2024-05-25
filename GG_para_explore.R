@@ -3,27 +3,32 @@ library(ggplot2)
 
 
 
-x <- seq(0, 10, length.out = 1000)
+x <- seq(0, 30, length.out = 1000)
 
 # Parameters for the first generalized gamma distribution
-mu1 <- 1.8
-sigma1 <- 0.2
+mu1 <- 1.5
+sigma1 <- 0.4
 q1 <- -0.15
 
 # Parameters for the second generalized gamma distribution
 mu2 <- 2
-sigma2 <- 0.17
+sigma2 <- 0.34
 q2 <- -0.15
 
 # Calculate the density values for each distribution
 pdf1 <- dgengamma(x, mu1, sigma1, q1)
 pdf2 <- dgengamma(x, mu2, sigma2, q2)
+
+h1 <- hgengamma(x, mu1, sigma1, q1)
+h2 <- hgengamma(x, mu2, sigma2, q2)
 # Plot the PDFs
 plot(x, pdf1, type = "l", col = "blue", lwd = 2, xlab = "x", ylab = "Density", main = "Generalized Gamma PDFs")
 lines(x, pdf2, col = "red", lwd = 2)
 legend("topright", legend = c("Distribution 1", "Distribution 2"), col = c("blue", "red"), lwd = 2)
 
-
+plot(x, h1, type = "l", col = "blue", lwd = 2, xlab = "x", ylab = "hazard", main = "Generalized Gamma Hazard")
+lines(x, h2, col = "red", lwd = 2)
+legend("topright", legend = c("Distribution 1", "Distribution 2"), col = c("blue", "red"), lwd = 2)
 
 
 

@@ -37,8 +37,8 @@ params_specify <- list(
   a1=2,
   a2=-4,
   sig_e2=10,
-  beta_mu=c(1.8, 0.2, 0.01, 0.1),
-  beta_sigma=c(0.2, -0.03,0,0),
+  beta_mu=c(1.5, 0.5, 0.01, 0.1),
+  beta_sigma=c(0.4, -0.06,0,0),
   beta_q=c(-0.15,0,0,0)
 )
 
@@ -48,7 +48,8 @@ params_true <- params_generate('specify', params_specify=params_specify)
 dat <- do.call(simData_GG, c(list(n = n, seed = seed, visits_time=visits_time, cens_time=cens_time), params_true))
 
 
-fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', GH_level=5)
+fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', 
+             GH_level=5, refine_GH = T)
 
 test <- z_statistic(fit, up_limit = 10, GH_level_z=11)
 var_test <- as.numeric(matrix(test$delta_mean_grt, nrow = 1) %*% solve(beta_hes_transform(fit$I_beta, fit$model_complex, 'collapse')) %*%

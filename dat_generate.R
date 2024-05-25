@@ -71,7 +71,7 @@ simData_GG <- function(n, seed, visits_time, cens_time, G, a0, a1, a2, sig_e2, b
   dat_y %<>% select(-b0,-b1,-Group)
   dat_t %<>% select(-b0,-b1,-mu,-sigma,-q)
   
-
+  print(paste0('proportion of cencering: ', 1-mean(dat_t$status)))
   
   obj <- list(dat_y, dat_t, dat_b, dat_gg, p_y)
   names(obj) <- c("longitudinal","survival",'true_b','true_GG','plot_longitudinal')
