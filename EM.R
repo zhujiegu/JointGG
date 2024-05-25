@@ -1,8 +1,7 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, model_complex, GH_level){
+JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, model_complex, GH_level, refine_GH=F){
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
-  tic <- proc.time()
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
   n_w_adj <- aGH_n_w(fit_y$reffects.individual, fit_y$var.reffects, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
@@ -29,28 +28,9 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
   dat_perID_t <- split(dat$survival, dat$survival$ID)
   dat_perID_t <- dat_perID_t[IDs]
   
-  # for(i in 1:steps){
-  #   step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-  #   params = step_outp$params
-  #   
-  #   ##################################
-  #   # # testing 
-  #   # params_list[[i]] <- params
-  #   ##################################
-  #   
-  #   logl[i] = step_outp$likl_log
-  #   
-  #   if(i > 1){
-  #     if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
-  #     if(abs(logl[i]-logl[i-1]) < tol) break
-  #   }
-  #   if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
-  #     print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
-  #   }
-  # }
+  tic <- proc.time()
   
-  # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
-  for(i in 1:floor(0.9*steps)){
+  for(i in 1:steps){
     step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
     params = step_outp$params
 
@@ -63,34 +43,60 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
 
     if(i > 1){
       if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
-      if(abs(logl[i]-logl[i-1]) < 10*tol) break
+      if(abs(logl[i]-logl[i-1]) < tol) break
     }
-    if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+    if(i %in% c(2, seq(10, 1e6, by=10))){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
     }
   }
-  print(paste('stage I of EM complete, Nr. step =', i, 'Now switch to full-adaptive GH'))
-  # stage one, using adaptive GH (posterior of b conditional on full data)
-  for(j in (i+1):steps){
-    # update node every step
-    n_w_adj2 <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
-    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-    params = step_outp$params
-
-    ##################################
-    # # testing
-    # params_list[[j]] <- params
-    ##################################
-
-    logl[j] = step_outp$likl_log
-
-
-    if(logl[j]-logl[j-1] < 0) print(paste('Decrease in log likelihood in step',j))
-    if(abs(logl[j]-logl[j-1]) < tol) break
-    if(j %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
-      print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[j]-logl[j-1], logl = logl[j]))
+  
+  if(refine_GH){
+    print(paste('stage I of EM complete, Nr. step =', i, 'Now update GH nodes and start second phase'))
+    n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+    
+    # stage two, using adaptive GH (posterior of b conditional on full data)
+    for(j in 1:steps){
+      # update node every step
+      step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+      params = step_outp$params
+      
+      ##################################
+      # # testing
+      # params_list[[j]] <- params
+      ##################################
+      
+      logl[i+j] = step_outp$likl_log
+      
+      
+      if(logl[i+j]-logl[i+j-1] < 0) print(paste('Decrease in log likelihood in step',j))
+      if(abs(logl[i+j]-logl[i+j-1]) < tol) break
+      if((i+j) %in% c(2, seq(10, 1e6, by=10))){
+        print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
+      }
     }
+  }else{
+    j=0
   }
+  # # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
+  # for(i in 1:floor(0.9*steps)){
+  #   step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+  #   params = step_outp$params
+  # 
+  #   ##################################
+  #   # # testing
+  #   # params_list[[i]] <- params
+  #   ##################################
+  # 
+  #   logl[i] = step_outp$likl_log
+  # 
+  #   if(i > 1){
+  #     if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
+  #     if(abs(logl[i]-logl[i-1]) < 10*tol) break
+  #   }
+  #   if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
+  #     print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
+  #   }
+  # }
   
   print('EM finished, starting computing observed information matrix')
   list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
@@ -104,8 +110,8 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
   
   # message("Nr steps was ", i)
   # message("Log-likelihood: ", logl[i])
-  message("Nr steps was ", j)
-  message("Log-likelihood: ", logl[j])
+  message("Nr steps was ", i+j)
+  message("Log-likelihood: ", logl[i+j])
   outputt <- list(params = params, I_beta = I_beta, E_b=step_outp$E_b, logl = logl, model_complex=model_complex, 
                   GH_level=GH_level, fit_y=fit_y, fit_t=fit_t) #, debug = debug_list)
   class(outputt) <- "JMGG"
