@@ -223,7 +223,24 @@ z_statistic_naive <- function(model_fit, up_limit){
               mean_treat= mean_treat, mean_control=mean_control,grt_treat=grt_treat, grt_control=grt_control))  
 }
 
-mean_t <- function(mu, sigma, q, up_limit=100){
-  t <- integrate(f = function(x) pgengamma(x,mu,sigma,q, lower.tail = F), lower = 0, upper = up_limit)
+mean_t <- function(mu, sigma, q, up_limit){
+  error_occurred <- TRUE
+  ever <- FALSE
+  while (error_occurred){
+    tryCatch(
+      {
+        t <- integrate(f = function(x) x*dgengamma(x,mu,sigma,q), lower = 0, upper = up_limit)
+        # If no error occurs, set the flag to FALSE to exit the loop
+        error_occurred <- FALSE
+      },
+      error = function(e) {
+        # error may occur when stretch of 0 present, decrease up_limit and continue the loop
+        up_limit <<- 0.8 * up_limit
+        ever <<- TRUE
+      }
+    )
+  }
+  if(ever) warning('Upper limit reduced during integration. Results may not be accurate.')
+  # t <- integrate(f = function(x) pgengamma(x,mu,sigma,q, lower.tail = F), lower = 0, upper = up_limit)
   return(t$value)
 }

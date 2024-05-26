@@ -68,7 +68,7 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
       logl[i+j] = step_outp$likl_log
       
       
-      if(logl[i+j]-logl[i+j-1] < 0) print(paste('Decrease in log likelihood in step',j))
+      if(logl[i+j]-logl[i+j-1] < 0) print(paste('Log likelihood decreased', logl[i+j]-logl[i+j-1], 'in step',i+j))
       if(abs(logl[i+j]-logl[i+j-1]) < tol) break
       if((i+j) %in% c(2, seq(10, 1e6, by=10))){
         print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
