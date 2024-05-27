@@ -17,7 +17,7 @@ dat_t <- prothros
 dat_y <- prothro
 
 dat_y %<>% select(id, pro, time, treat) %>% mutate(exposure='pro')
-colnames(dat_y) <- c('ID', 'value', 'visits_time', 'treat', 'exposure')
+colnames(dat_y) <- c('ID', 'value', 'visits_age', 'treat', 'exposure')
 colnames(dat_t) <- c('ID','times','status','treat')
 
 dat_y$ID <- paste0('ID',dat_y$ID)

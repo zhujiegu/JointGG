@@ -229,12 +229,12 @@ fun_com <- function(nw, dat_y, dat_t, params, model_complex){
   b0 <- b[1,1]
   b1 <- b[1,2]
   # PRODUCT f(Y|b)
-  f_y <- with(params, dat_y %>% rowwise %>% mutate(mean=a0+b0+(a1+b1+a2*treat)*visits_time,sd=sqrt(sig_e2)) %>% 
+  f_y <- with(params, dat_y %>% rowwise %>% mutate(mean=a0+b0+(a1+b1+a2*treat)*visits_age,sd=sqrt(sig_e2)) %>% 
                 mutate(f=dnorm(x=value, mean, sd)) %>% ungroup() %>% summarise(fy = prod(f))) %>% as.numeric()
   ##################################
   # testing
-  # with(params, a0+b0+(a1+b1+a2*dat_t$treat)*visits_time)
-  # f_y <- with(params, dat_y %>% rowwise %>% mutate(f=dnorm(x=value, mean=a0-0.0442+(a1-1.72+a2*treat)*visits_time, sd=sqrt(sig_e2))) %>%
+  # with(params, a0+b0+(a1+b1+a2*dat_t$treat)*visits_age)
+  # f_y <- with(params, dat_y %>% rowwise %>% mutate(f=dnorm(x=value, mean=a0-0.0442+(a1-1.72+a2*treat)*visits_age, sd=sqrt(sig_e2))) %>%
   #               ungroup() %>% summarise(fy = prod(f))) %>% as.numeric()
   ##################################
 

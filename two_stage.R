@@ -6,8 +6,8 @@
 # fitting longitudinal
 fit_longitudinal <- function(dat){
   print('start fitting longitudinal data in two-stage')
-  fit_y = suppressMessages(lme(value ~ 1 + visits_time + treat:visits_time,  
-                               random=~ 1 + visits_time|ID,
+  fit_y = suppressMessages(lme(value ~ 1 + visits_age + treat:visits_age,  
+                               random=~ 1 + visits_age|ID,
                                weights=varIdent(form=~1|exposure),
                                data = dat$longitudinal,
                                control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-8,

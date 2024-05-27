@@ -6,12 +6,12 @@ library(ggplot2)
 x <- seq(0, 30, length.out = 1000)
 
 # Parameters for the first generalized gamma distribution
-mu1 <- 1.5
+mu1 <- 1
 sigma1 <- 0.4
 q1 <- -0.15
 
 # Parameters for the second generalized gamma distribution
-mu2 <- 2
+mu2 <- 1.5
 sigma2 <- 0.34
 q2 <- -0.15
 

@@ -187,17 +187,17 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   # browser()
   #a0
   dat_y <- dat$longitudinal %>% left_join(df_E_b, by = "ID") %>% left_join(df_E_bb, by = "ID")
-  update_y <- with(params, dat_y %>% mutate(a0_next=value-Eb0-(a1+Eb1+a2*treat)*visits_time,
-                                  a1_next=value-a0-Eb0-(Eb1+a2*treat)*visits_time,
-                                  a2_next=value-a0-Eb0-(a1+Eb1)*visits_time,
-                                  sig_e2=(value-a0-(a1+a2*treat)*visits_time)^2 - 
-                                    2*(value-a0-(a1+a2*treat)*visits_time)*(Eb0+Eb1*visits_time) + 
-                                    Ebb0+2*Eb0b1*visits_time+Ebb1*visits_time^2,
-                                  xt=treat*visits_time)) %>% select(-ID, -exposure) %>% colSums %>% t %>% as_tibble
+  update_y <- with(params, dat_y %>% mutate(a0_next=value-Eb0-(a1+Eb1+a2*treat)*visits_age,
+                                  a1_next=value-a0-Eb0-(Eb1+a2*treat)*visits_age,
+                                  a2_next=value-a0-Eb0-(a1+Eb1)*visits_age,
+                                  sig_e2=(value-a0-(a1+a2*treat)*visits_age)^2 - 
+                                    2*(value-a0-(a1+a2*treat)*visits_age)*(Eb0+Eb1*visits_age) + 
+                                    Ebb0+2*Eb0b1*visits_age+Ebb1*visits_age^2,
+                                  xt=treat*visits_age)) %>% select(-ID, -exposure) %>% colSums %>% t %>% as_tibble
   n = nrow(dat$survival)
   N = nrow(dat$longitudinal)
   params$a0 <- update_y$a0_next/N
-  params$a1 <- update_y$a1_next/update_y$visits_time
+  params$a1 <- update_y$a1_next/update_y$visits_age
   params$a2 <- update_y$a2_next/update_y$xt
   params$sig_e2 <- update_y$sig_e2/N
   params$G <- Reduce('+', E_bb)/n

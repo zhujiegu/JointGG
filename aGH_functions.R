@@ -345,7 +345,7 @@ aGH_common_i <- function(nw, dat_y, dat_t, params, model_complex){
     
     ######################################
     # PRODUCT f(Y|b)
-    f_y <- with(params, dat_y %>% rowwise %>% mutate(mean=a0+b0+(a1+b1+a2*treat)*visits_time,sd=sqrt(sig_e2)) %>% 
+    f_y <- with(params, dat_y %>% rowwise %>% mutate(mean=a0+b0+(a1+b1+a2*treat)*visits_age,sd=sqrt(sig_e2)) %>% 
                   mutate(f=dnorm(x=value, mean, sd)) %>% ungroup() %>% summarise(fy = prod(f))) %>% as.numeric()
     
     ######################################
