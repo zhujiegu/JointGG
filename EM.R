@@ -1,6 +1,6 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, model_complex, GH_level, refine_GH=F){
+JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=1, model_complex, GH_level, refine_GH=F){
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
@@ -38,12 +38,17 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
     # # testing
     # params_list[[i]] <- params
     ##################################
-
     logl[i] = step_outp$likl_log
 
     if(i > 1){
       if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
-      if(abs(logl[i]-logl[i-1]) < tol) break
+      if(logl[1]<0 && logl[i] < 2*logl[1]){
+        print('EM algorithm may have diverged, return the initial parameters (from two-stage)')
+        params <- init_params
+        refine_GH <- FALSE
+        break
+      }
+      if(abs(logl[i]-logl[i-1]) < rel_tol*abs(logl[2]-logl[1])) break
     }
     if(i %in% c(2, seq(10, 1e6, by=10))){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
@@ -69,7 +74,12 @@ JM_EM <- function(dat, init_params='two-stage', tol=1e-3, steps=5, Nr.cores=1, m
       
       
       if(logl[i+j]-logl[i+j-1] < 0) print(paste('Log likelihood decreased', logl[i+j]-logl[i+j-1], 'in step',i+j))
-      if(abs(logl[i+j]-logl[i+j-1]) < tol) break
+      if(logl[1]<0 && logl[i+j] < 2*logl[1]){
+        print('EM algorithm may have diverged, return the initial parameters (from two-stage)')
+        params <- init_params
+        break
+      }
+      if(abs(logl[i+j]-logl[i+j-1]) < rel_tol*abs(logl[2]-logl[1])) break
       if((i+j) %in% c(2, seq(10, 1e6, by=10))){
         print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
       }

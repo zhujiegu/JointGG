@@ -16,7 +16,7 @@ select <- dplyr::select
 # Model parameters: sigmaeps2, G, alpha, beta, lambda
 
 simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q){
-  
+  set.seed(seed)
   b_dim=nrow(G)
   #################
   # Treatment assign
@@ -95,6 +95,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
 
 simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
                         G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q){
+  set.seed(seed)
   b_dim=nrow(G)
   #################
   # Treatment assign

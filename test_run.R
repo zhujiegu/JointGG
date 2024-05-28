@@ -55,11 +55,13 @@ params_specify <- list(
 
 params_true <- params_generate('specify', params_specify=params_specify)
 
+dat <- do.call(simData_GG, c(list(n = n, seed = seed, visits_age=visits_age, cens_time), params_true))
+
 dat <- do.call(simData_seq, c(list(n = n, seed = seed, visits_age=visits_age, recruitment_time=recruitment_time, 
                                    interim_times=interim_times), params_true))
 
 
-fit <- JM_EM(dat, init_params='two-stage', tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', 
+fit <- JM_EM(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=1, model_complex='normal', 
              GH_level=5, refine_GH = T)
 
 test <- z_statistic(fit, up_limit = 10, GH_level_z=11)
