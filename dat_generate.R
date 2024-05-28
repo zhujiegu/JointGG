@@ -75,8 +75,19 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
   
   print(paste0('proportion of cencering: ', 1-mean(dat_t$status)))
   
-  obj <- list(dat_y, dat_t, dat_b, dat_gg, p_y)
-  names(obj) <- c("longitudinal","survival",'true_b','true_GG','plot_longitudinal')
+  params_true <- list(
+    G=G,
+    a0=a0,
+    a1=a1,
+    a2=a2,
+    sig_e2=sig_e2,
+    beta_mu=beta_mu,
+    beta_sigma=beta_sigma,
+    beta_q=beta_q
+  )
+
+  obj <- list(dat_y, dat_t, dat_b, dat_gg, p_y, params_true)
+  names(obj) <- c("longitudinal","survival",'true_b','true_GG','plot_longitudinal', 'params')
   
   return(obj)
 }
@@ -120,11 +131,21 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   ##############################
   dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, dat_y, k, a0, a1, a2, sig_e2))
   names(dat) <- c(paste0('interim', 1:length(interim_times)))
-  #---------------------------------------------------------------------
-  # Creating the longitudinal and survival processes object
-  #---------------------------------------------------------------------
+
   dat$true_b <- dat_t %>% select(ID,b0,b1)
   dat$true_GG <- dat_t %>% select(ID,mu,sigma,q)
+  
+  params_true <- list(
+    G=G,
+    a0=a0,
+    a1=a1,
+    a2=a2,
+    sig_e2=sig_e2,
+    beta_mu=beta_mu,
+    beta_sigma=beta_sigma,
+    beta_q=beta_q
+  )
+  dat$params <- params_true
   ##############################
   # plot
   ##############################
@@ -138,10 +159,6 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   # print(paste0('proportion of cencering: ', 1-mean(dat_t$status)))
   return(dat)
 }
-# flexsurvreg(formula = Surv(Time, death) ~ 1, data = prothros, dist="gengamma")
-# 
-# flexsurvreg(formula = Surv(Time, death) ~ 1, data = filter(prothros, treat=='prednisone'), dist="gengamma")
-# flexsurvreg(formula = Surv(Time, death) ~ 1, data = filter(prothros, treat=='placebo'), dist="gengamma")
 
 generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2){
   dat_t %<>% filter(start<=interim_time)
