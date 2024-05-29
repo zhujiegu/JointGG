@@ -47,51 +47,30 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   # define which betas need to be updated based on the complexity of the model
   if(model_complex=='normal'){
     # Initialize parameters
-
+    # browser()
     fit_t_no_reff <- optim(rep(0.8,5),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
                            gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  method = 'L-BFGS-B')
     fit_t_no_reff<- c(fit_t_no_reff$par[1:2],0,0, fit_t_no_reff$par[3:5])
     # Start optimization with error handling
-    try({
-      # fit_t_tmp <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), method = 'L-BFGS-B')
-      fit_t_tmp <- optim(fit_t_no_reff,fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-                         gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual),  method = 'L-BFGS-B')
-      if(!is.null(fit_t_tmp$convergence) && fit_t_tmp$convergence == 0) {
-        fit_t <- fit_t_tmp
-      } else{
+    fit_t <- tryCatch({
+      fit_t_tmp <- optim(fit_t_no_reff, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
+                         gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual), method = 'L-BFGS-B')
+      if (!is.null(fit_t_tmp$convergence) && fit_t_tmp$convergence == 0) {
+        fit_t_tmp$par
+      } else {
         print("Optimization in two-stage survival failed, method: L-BFGS-B")
-        fit_t <-  fit_t_no_reff
+        fit_t_no_reff
       }
-    }, silent = TRUE)
-    # # try Nelder-Mead
-    # if(is.null(fit_t)){
-    #   print('Trying Nelder-Mead now')
-    #   count <- 0
-    #   repeat{
-    #     count <- count + 1
-    #     try({
-    #       fit_t <- optim(rep(0.8,7),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-    #                      method = 'Nelder-Mead')
-    #       if(!is.null(fit_t$convergence) && fit_t$convergence == 0) {
-    #         break
-    #       } else{
-    #         initial_params <- runif(7, 0, 2)  # New random initial parameters
-    #       }
-    #     }, silent = TRUE)
-    #     if (count >= 3) {
-    #       print("In two-stage survival fit, Nelder-Mead also failed.")
-    #       fit_t <- list(par=rep(0.1, 7))
-    #       break
-    #     }
-    #   }
-    # }
-
+    }, error = function(e) {
+      print("Optimization in two-stage survival failed, method: L-BFGS-B")
+      fit_t_no_reff
+    })
   }
   if(model_complex=='saturated'){
     stop('two-step to be completed')
   }
   print('finish fitting survival data in two-stage')
-  betas <- beta_vec_to_param(fit_t$par, model_complex)
+  betas <- beta_vec_to_param(fit_t, model_complex)
   print('initial betas_mu:') 
   print(betas$beta_mu)
   print('initial betas_sigma:') 
@@ -101,7 +80,7 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   
   return(list(beta_mu=betas$beta_mu, beta_sigma=betas$beta_sigma, beta_q=betas$beta_q,
               beta_noreff = beta_vec_to_param(fit_t_no_reff, model_complex)
-))
+  ))
 }
 
 
@@ -136,7 +115,7 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F)
 }
 
 ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
-
+  
   betas <- beta_vec_to_param(params_vec, model_complex, rm_reff=rm_reff)
   beta_mu <- betas$beta_mu
   beta_sigma <- betas$beta_sigma
@@ -261,7 +240,3 @@ beta_hes_transform <- function(hes, model_complex, type=c('collapse', 'expand'))
   }
   return(result)
 }
-
-
-
-
