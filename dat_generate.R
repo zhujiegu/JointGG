@@ -63,6 +63,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
   p_y <- ggplot(dat_y, aes(x = visits_age, y = value, group = ID, color = Group)) +
     geom_line() +
     geom_point(size = 1.5) +
+    scale_color_discrete(labels = c("0" = "Control", "1" = "Treatment")) +
     labs(x = "Time (years)", y = "Systolic Blood Pressure (mmHg)") +
     theme_minimal()
   #---------------------------------------------------------------------
