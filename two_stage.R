@@ -1,4 +1,4 @@
-
+library(nlme)
 
 ###############################################################################
 # two-stage fiting
@@ -48,9 +48,10 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   if(model_complex=='normal'){
     # Initialize parameters
     # browser()
-    fit_t_no_reff <- optim(rep(0.8,5),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
-                           gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  method = 'L-BFGS-B')
-    fit_t_no_reff<- c(fit_t_no_reff$par[1:2],0,0, fit_t_no_reff$par[3:5])
+    fit_t_no_reff_tmp <- optim(rep(0.8,5),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
+                               gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  
+                               method = 'L-BFGS-B', hessian = T)
+    fit_t_no_reff<- c(fit_t_no_reff_tmp$par[1:2],0,0, fit_t_no_reff_tmp$par[3:5])
     # Start optimization with error handling
     fit_t <- tryCatch({
       fit_t_tmp <- optim(fit_t_no_reff, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
@@ -79,7 +80,8 @@ fit_survival <- function(dat, model_complex, reffects.individual){
   print(betas$beta_q)
   
   return(list(beta_mu=betas$beta_mu, beta_sigma=betas$beta_sigma, beta_q=betas$beta_q,
-              beta_noreff = beta_vec_to_param(fit_t_no_reff, model_complex)
+              beta_noreff = beta_vec_to_param(fit_t_no_reff, model_complex),
+              beta_noreff_hes = fit_t_no_reff_tmp$hessian
   ))
 }
 
@@ -216,11 +218,11 @@ beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand'),
       result[keep] <- vec
     }else{
       result <- vec[keep]
+      if(rm_reff) result <- result[-(3:4)]
     }
   }else{
     stop('add other model complexity')
   }
-  if(rm_reff) result <- result[-(3:4)]
   return(result)
 }
 

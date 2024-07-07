@@ -33,13 +33,13 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   for(i in 1:steps){
     step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
     params = step_outp$params
-
+    
     ##################################
     # # testing
     # params_list[[i]] <- params
     ##################################
     logl[i] = step_outp$likl_log
-
+    
     if(i > 1){
       if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
       if(logl[1]<0 && logl[i] < 2*logl[1]){
@@ -129,7 +129,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
 }
 
 EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
-
+  
   # Numerical integration of the common part and store the results (all sample combined)
   list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
   # list_nodes <- common_part$nodes
@@ -139,7 +139,7 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
     return(sum(e))
   })
   likl_log <- sapply(list_likl, log) %>% sum
-
+  
   ##################################################################
   # Start EM for survival parameters here
   ##################################################################
@@ -198,12 +198,12 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   #a0
   dat_y <- dat$longitudinal %>% left_join(df_E_b, by = "ID") %>% left_join(df_E_bb, by = "ID")
   update_y <- with(params, dat_y %>% mutate(a0_next=value-Eb0-(a1+Eb1+a2*treat)*visits_age,
-                                  a1_next=value-a0-Eb0-(Eb1+a2*treat)*visits_age,
-                                  a2_next=value-a0-Eb0-(a1+Eb1)*visits_age,
-                                  sig_e2=(value-a0-(a1+a2*treat)*visits_age)^2 - 
-                                    2*(value-a0-(a1+a2*treat)*visits_age)*(Eb0+Eb1*visits_age) + 
-                                    Ebb0+2*Eb0b1*visits_age+Ebb1*visits_age^2,
-                                  xt=treat*visits_age)) %>% select(-ID, -exposure) %>% colSums %>% t %>% as_tibble
+                                            a1_next=value-a0-Eb0-(Eb1+a2*treat)*visits_age,
+                                            a2_next=value-a0-Eb0-(a1+Eb1)*visits_age,
+                                            sig_e2=(value-a0-(a1+a2*treat)*visits_age)^2 - 
+                                              2*(value-a0-(a1+a2*treat)*visits_age)*(Eb0+Eb1*visits_age) + 
+                                              Ebb0+2*Eb0b1*visits_age+Ebb1*visits_age^2,
+                                            xt=treat*visits_age)) %>% select(-ID, -exposure) %>% colSums %>% t %>% as_tibble
   n = nrow(dat$survival)
   N = nrow(dat$longitudinal)
   params$a0 <- update_y$a0_next/N

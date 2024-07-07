@@ -22,7 +22,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
   # Treatment assign
   #################
   x_i = rbinom(n,1,0.5)
-
+  
   #################
   # Random effects
   #################
@@ -49,7 +49,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
   dat_t %<>% mutate(status=ifelse(surv_t<cens_time, 1, 0), cens_t=cens_time) %>% 
     rowwise %>% mutate(times=min(surv_t,cens_t)) %>% ungroup
   
-
+  
   ##############################
   # Longitudinal process  
   ##############################
@@ -57,7 +57,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
   dat_y %<>% cross_join(tibble(visits_age))
   dat_y %<>% filter(visits_age <= times) 
   dat_y %<>% mutate(value=(a0+b0+(a1+b1)*visits_age+a2*treat*visits_age +
-                     rnorm(length(visits_age), 0,sqrt(sig_e2))))
+                             rnorm(length(visits_age), 0,sqrt(sig_e2))))
   # plot
   dat_y$Group <- factor(dat_y$treat)
   p_y <- ggplot(dat_y, aes(x = visits_age, y = value, group = ID, color = Group)) +
@@ -86,7 +86,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
     beta_sigma=beta_sigma,
     beta_q=beta_q
   )
-
+  
   obj <- list(dat_y, dat_t, dat_b, dat_gg, p_y, params_true)
   names(obj) <- c("longitudinal","survival",'true_b','true_GG','plot_longitudinal', 'params')
   
@@ -131,9 +131,9 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   ##############################
   # Data for interim analysis 
   ##############################
-  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, dat_y, k, a0, a1, a2, sig_e2))
+  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, dat_y, k, a0, a1, a2, sig_e2, visits_age))
   names(dat) <- c(paste0('interim', 1:length(interim_times)))
-
+  
   dat$true_b <- dat_t %>% select(ID,b0,b1)
   dat$true_GG <- dat_t %>% select(ID,mu,sigma,q)
   
@@ -162,7 +162,7 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   return(dat)
 }
 
-generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2){
+generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2, visits_age){
   dat_t %<>% filter(start<=interim_time)
   dat_t %<>% mutate(status=ifelse(end<interim_time, 1, 0), cens_t=interim_time) %>% 
     rowwise %>% mutate(times=min(surv_t,cens_t-start)) %>% ungroup
