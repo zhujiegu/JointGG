@@ -67,6 +67,28 @@ fit_survival <- function(dat, model_complex, reffects.individual){
       fit_t_no_reff
     })
   }
+  if(model_complex=='AFT'){
+    # Initialize parameters
+    # browser()
+    fit_t_no_reff_tmp <- optim(rep(0.8,4),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
+                               gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  
+                               method = 'L-BFGS-B', hessian = T)
+    fit_t_no_reff<- c(fit_t_no_reff_tmp$par[1:2],0,0, fit_t_no_reff_tmp$par[3:4])
+    # Start optimization with error handling
+    fit_t <- tryCatch({
+      fit_t_tmp <- optim(fit_t_no_reff, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
+                         gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual), method = 'L-BFGS-B')
+      if (!is.null(fit_t_tmp$convergence) && fit_t_tmp$convergence == 0) {
+        fit_t_tmp$par
+      } else {
+        print("Optimization in two-stage survival failed, method: L-BFGS-B")
+        fit_t_no_reff
+      }
+    }, error = function(e) {
+      print("Optimization in two-stage survival failed, method: L-BFGS-B")
+      fit_t_no_reff
+    })
+  }
   if(model_complex=='saturated'){
     stop('two-step to be completed')
   }
@@ -104,6 +126,11 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F)
       z_sigma = cbind(1, dat_t[i,]$treat, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
+    if(model_complex=='AFT'){
+      z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      z_sigma = cbind(1, 0, 0, 0) %>% matrix(nrow=1)
+      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+    }
     if(model_complex=='test'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
@@ -133,6 +160,11 @@ ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_ref
     if(model_complex=='normal'){
       z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
       z_sigma = cbind(1, dat_t[i,]$treat, 0, 0) %>% matrix(nrow=1)
+      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+    }
+    if(model_complex=='AFT'){
+      z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      z_sigma = cbind(1, 0, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     if(model_complex=='test'){
@@ -206,6 +238,17 @@ beta_vec_to_param <- function(params_vec, model_complex, rm_reff=F){
       beta_q=c(params_vec[7],0,0,0) 
     }
   }
+  if(model_complex=='AFT'){
+    if(rm_reff){
+      beta_mu=c(params_vec[1], params_vec[2],0,0)
+      beta_sigma=c(params_vec[3],0,0,0)
+      beta_q=c(params_vec[4],0,0,0)
+    }else{
+      beta_mu=c(params_vec[1], params_vec[2],params_vec[3],params_vec[4])
+      beta_sigma=c(params_vec[5],0,0,0)
+      beta_q=c(params_vec[6],0,0,0) 
+    }
+  }
   return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
 }
 
@@ -220,8 +263,19 @@ beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand'),
       result <- vec[keep]
       if(rm_reff) result <- result[-(3:4)]
     }
-  }else{
-    stop('add other model complexity')
+  }
+  if(model_complex=='AFT'){
+    keep <- c(1,2,3,4,5,9) #positions in c(beta_mu, beta_sigma, beta_q)
+    if(type == 'expand'){
+      result <- rep(0,12)
+      result[keep] <- vec
+    }else{
+      result <- vec[keep]
+      if(rm_reff) result <- result[-(3:4)]
+    }
+  }
+  if(model_complex=='saturated'){
+    stop('add this model complexity in beta_vec_transform')
   }
   return(result)
 }
@@ -237,8 +291,18 @@ beta_hes_transform <- function(hes, model_complex, type=c('collapse', 'expand'))
     }else{
       result <- hes[keep, keep]
     }
-  }else{
-    stop('add other model complexity')
+  }
+  if(model_complex=='AFT'){
+    keep <- c(1,2,3,4,5,9)
+    if(type == 'expand'){
+      result <- matrix(0, nrow=12, ncol=12)
+      result[keep, keep] <- hes
+    }else{
+      result <- hes[keep, keep]
+    }
+  }
+  if(model_complex=='saturated'){
+    stop('add this model complexity in beta_hes_transform')
   }
   return(result)
 }

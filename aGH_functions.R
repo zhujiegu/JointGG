@@ -5,11 +5,11 @@ aGH_b <- function(moment=c('first','second'), list_com, n_w_adj, list_likl, Nr.c
   k=length(n_w_adj[[1]]$w)
   if(moment=='first'){
     results <- mclapply(IDs, mc.cores =Nr.cores, function(i){
-        # We multiply each element of vec with each corresponding row of nodes
-        product_matrix <- sweep(n_w_adj[[i]]$n, 1, list_com[[i]], `*`)
-        # Sum the resulting rows to get a single row vector (1x2)
-        return(colSums(product_matrix))
-      })
+      # We multiply each element of vec with each corresponding row of nodes
+      product_matrix <- sweep(n_w_adj[[i]]$n, 1, list_com[[i]], `*`)
+      # Sum the resulting rows to get a single row vector (1x2)
+      return(colSums(product_matrix))
+    })
   }
   if(moment=='second'){
     b_crossprod <- mclapply(n_w_adj, mc.cores =Nr.cores, function(i){
@@ -18,7 +18,7 @@ aGH_b <- function(moment=c('first','second'), list_com, n_w_adj, list_likl, Nr.c
       })
     })
     names(b_crossprod) <- IDs
-      
+    
     results <- mclapply(IDs, mc.cores =Nr.cores, function(i) {
       # Multiply each cross_product matrix by corresponding element in vec and sum up the matrices
       summed_matrix <- Reduce(`+`, Map(function(cp, scalar) cp * scalar, b_crossprod[[i]], list_com[[i]]))
@@ -58,10 +58,15 @@ aGH_Q_beta <- function(Nr.cores=1, update_beta=F, update_mu, update_sigma, updat
         z_sigma = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
         z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
+      if(model_complex=='AFT'){
+        z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
+        z_sigma = c(1, 0, 0, 0) %>% matrix(nrow=1)
+        z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
       if(model_complex=='test'){
         z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
-
+      
       mu <- z_mu %*% beta_mu %>% as.numeric
       sigma <- exp(z_sigma %*% beta_sigma) %>% as.numeric
       q <- exp(z_q %*% beta_q) %>% as.numeric
@@ -96,6 +101,11 @@ aGH_Q_grt_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, l
       if(model_complex=='normal'){
         z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
         z_sigma = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
+        z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
+      if(model_complex=='AFT'){
+        z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
+        z_sigma = c(1, 0, 0, 0) %>% matrix(nrow=1)
         z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
       if(model_complex=='test'){
@@ -175,6 +185,11 @@ aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_
         z_sigma = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
         z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
+      if(model_complex=='AFT'){
+        z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
+        z_sigma = c(1, 0, 0, 0) %>% matrix(nrow=1)
+        z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
       if(model_complex=='test'){
         z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
@@ -188,7 +203,7 @@ aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_
       if(!is.finite(log_upper_gamma_q(q, ww=ww))){phi_q=NA}else{
         phi_q=grad(function(q) log_upper_gamma_q(q, ww=ww), q)
       }
-
+      
       if(!is.finite(phi_w)){
         warning('unrealistic gradient of Gamma(a,x) wrt w evaluated at some node, use realistic data or use adaptive quadrature')
         grd_mu = grd_sigma = z_mu*0
@@ -232,6 +247,11 @@ aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_
         z_sigma = c(1, dat_perID_t[[i]]$treat, 0, 0) %>% matrix(nrow=1)
         z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
+      if(model_complex=='AFT'){
+        z_mu = cbind(1, dat_perID_t[[i]]$treat,r) %>% as.matrix
+        z_sigma = c(1, 0, 0, 0) %>% matrix(nrow=1)
+        z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      }
       if(model_complex=='test'){
         z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
       }
@@ -260,7 +280,7 @@ aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_
   
   # assemble
   term1 <- - Reduce('+', list_hessian)
-
+  
   term2 <- Reduce('+', list_grt2)
   
   term3 <- matrix(0, nrow = length(list_grt[[1]]), ncol = length(list_grt[[1]]))
@@ -275,7 +295,7 @@ aGH_I_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, list_
       }
     }
   }
- 
+  
   results <- term1 - term2 - term3
   solve(results)
   return(results)
@@ -298,7 +318,7 @@ aGH_n_w <- function(reffects.individual, var.reffects, Nr.cores=1, GH_level=9, d
   w <- as.matrix(expand.grid(rep(list(GH$w), b_dim))) 
   # 2^(p/2) w*exp(||nodes||^2)
   w <- 2^(b_dim/2)*apply(w, 1, prod)*exp(rowSums(nodes*nodes))
-
+  
   n_w_adj <- mclapply(IDs, mc.cores = Nr.cores, function(i){
     aGH_nodes = adjust_nodes(mu_b_i=reffects.individual[[i]], var_b_i=var.reffects[[i]], nodes,w)
     ####################################################################
@@ -322,7 +342,7 @@ aGH_common <- function(params, n_w_adj, dat, model_complex, Nr.cores){
   list_common <- parallel::mclapply(IDs, mc.cores = Nr.cores, function(i){
     aGH_common_i(n_w_adj[[i]], dat_y = dat_perID_y[[i]], dat_t = dat_perID_t[[i]], params = params, model_complex = model_complex)})
   names(list_common) <- IDs
-
+  
   # names(list_fs) <- IDs
   return(list_common)
 }
@@ -355,7 +375,13 @@ aGH_common_i <- function(nw, dat_y, dat_t, params, model_complex){
     }
     if(model_complex=='normal'){
       z_mu = c(1, dat_t$treat,r)
-      z_sigma = z_q = c(1, dat_t$treat, 0, 0)
+      z_sigma = c(1, dat_t$treat, 0, 0)
+      z_q = c(1, 0,0,0)
+    }
+    if(model_complex=='AFT'){
+      z_mu = c(1, dat_t$treat,r)
+      z_sigma = c(1, 0, 0, 0)
+      z_q = c(1, 0,0,0)
     }
     if(model_complex=='test'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)

@@ -40,6 +40,11 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
       z_sigma = c(1,treat, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
+    if(model_complex=='AFT'){
+      z_mu = cbind(1,treat,r) %>% as.matrix
+      z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
+      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+    }
     if(model_complex=='test'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
@@ -81,6 +86,11 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
     if(model_complex=='normal'){
       z_mu = cbind(1,treat,r) %>% as.matrix
       z_sigma = c(1,treat, 0, 0) %>% matrix(nrow=1)
+      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+    }
+    if(model_complex=='AFT'){
+      z_mu = cbind(1,treat,r) %>% as.matrix
+      z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     if(model_complex=='test'){
@@ -130,7 +140,7 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
                             solve(beta_hes_transform(model_fit$I_beta, model_complex, 'collapse')) %*%
                             matrix(delta_mean_grt, ncol = 1))
   
-  return(list(delta_RMST = delta_mean_t, delta_RMST_grt =delta_mean_grt, var_delta_RMST=var_delta,
+  return(list(delta_RMST = delta_mean_t, var_delta_RMST=var_delta, delta_RMST_grt =delta_mean_grt,
               RMST_treat= mean_treat, RMST_control=mean_control,grt_treat=grt_treat, grt_control=grt_control))  
 }
 
@@ -158,6 +168,11 @@ z_statistic_naive <- function(model_fit, up_limit){
   if(model_complex=='normal'){
     z_mu = cbind(1,treat,0,0) %>% as.matrix
     z_sigma = c(1,treat, 0, 0) %>% matrix(nrow=1)
+    z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+  }
+  if(model_complex=='AFT'){
+    z_mu = cbind(1,treat,0,0) %>% as.matrix
+    z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   if(model_complex=='test'){
@@ -231,7 +246,7 @@ z_statistic_naive <- function(model_fit, up_limit){
 }
 
 # variance of the delta RMST when fit GG distribution to survival data alone
-get_var_GG <- function(model_fit, up_limit){
+get_RMST_var_GG <- function(model_fit, up_limit){
   beta_mu <- model_fit$fit_t$beta_noreff$beta_mu
   beta_sigma <- model_fit$fit_t$beta_noreff$beta_sigma
   beta_q <- model_fit$fit_t$beta_noreff$beta_q
@@ -244,6 +259,11 @@ get_var_GG <- function(model_fit, up_limit){
   if(model_fit$model_complex=='normal'){
     z_mu = cbind(1,treat,0,0) %>% as.matrix
     z_sigma = c(1,treat, 0, 0) %>% matrix(nrow=1)
+    z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+  }
+  if(model_fit$model_complex=='AFT'){
+    z_mu = cbind(1,treat,0,0) %>% as.matrix
+    z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   if(model_fit$model_complex=='test'){
@@ -268,6 +288,8 @@ get_var_GG <- function(model_fit, up_limit){
   # combine
   grt_treat <- c(beta_mu_grt, beta_sigma_grt, beta_q_grt)
   grt_treat <- beta_vec_transform(grt_treat,model_fit$model_complex, 'collapse', rm_reff = T)
+  # RMST
+  RMST_treat <- mean_t(mu, sigma, q, up_limit)
   
   #################################################
   treat=0
@@ -277,6 +299,11 @@ get_var_GG <- function(model_fit, up_limit){
   if(model_fit$model_complex=='normal'){
     z_mu = cbind(1,treat,0,0) %>% as.matrix
     z_sigma = c(1,treat, 0, 0) %>% matrix(nrow=1)
+    z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+  }
+  if(model_fit$model_complex=='AFT'){
+    z_mu = cbind(1,treat,0,0) %>% as.matrix
+    z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   if(model_fit$model_complex=='test'){
@@ -301,13 +328,15 @@ get_var_GG <- function(model_fit, up_limit){
   # combine
   grt_contl <- c(beta_mu_grt, beta_sigma_grt, beta_q_grt)
   grt_contl <- beta_vec_transform(grt_contl,model_fit$model_complex, 'collapse', rm_reff = T)
+  # RMST
+  RMST_contl <- mean_t(mu, sigma, q, up_limit)
   
-  
+  delta_RMST = RMST_treat - RMST_contl
   delta_RMST_grt =grt_treat-grt_contl
   var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
                             solve(I_beta) %*%
                             matrix(delta_RMST_grt, ncol = 1))
-  return(var_delta)
+  return(list(delta_RMST=delta_RMST, var_delta=var_delta))
 }
 
 
