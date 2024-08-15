@@ -47,9 +47,9 @@ boundaries <- function(I_vec, alpha, beta, delta, pho){
       b[k] <- -qnorm(error1)
     }else{
       error1 <- error_spend_f(I_vec[k], alpha, pho)-error_spend_f(I_vec[k-1], alpha, pho)
-      b[k] <- uniroot(f = function(b_k) pmvnorm(rep(0,k), corr = sig_z[1:k,1:k], 
-                                                lower=c(rep(-Inf,k-1),b_k), upper=c(b[1:k-1],Inf))-error1,
-                      interval=c(0,5))$root
+      b[k] <- optimise(f = function(b_k) (pmvnorm(rep(0,k), sigma = sig_z[1:k,1:k], 
+                                                lower=c(rep(-Inf,k-1),b_k), upper=c(b[1:k-1],Inf))-error1)^2,
+                      interval=c(0,5))$minimum
     }
     err1[k] <- error1
   }
@@ -66,9 +66,9 @@ boundaries <- function(I_vec, alpha, beta, delta, pho){
         a[k] <- qnorm(error2, mean = mean_vec[1], sd = 1)
       }else{
         error2 <- error_spend_g(I_vec[k], beta, pho)-error_spend_g(I_vec[k-1], beta, pho)
-        a[k] <- uniroot(f = function(a_k) pmvnorm(mean_vec[1:k], corr = sig_z[1:k,1:k], 
-                                                  lower=c(a[1:k-1],-Inf), upper=c(b[1:k-1],a_k))-error2,
-                        interval=c(-2,5))$root
+        a[k] <- optimise(f = function(a_k) (pmvnorm(mean_vec[1:k], sigma = sig_z[1:k,1:k], 
+                                                  lower=c(a[1:k-1],-Inf), upper=c(b[1:k-1],a_k))-error2)^2,
+                        interval=c(-2,5))$minimum
       }
     }
     return(a)
@@ -76,10 +76,10 @@ boundaries <- function(I_vec, alpha, beta, delta, pho){
   
   Imax_a <- function(Imax){
     a <- a_Imax(Imax)
-    return(a[K]-b[K])
+    return((a[K]-b[K])^2)
   }
   I_fix <- ((-qnorm(alpha)-qnorm(beta))/delta)^2
-  Imax <- uniroot(Imax_a, interval = c(I_fix, 1.5*I_fix))$root
+  Imax <- optimise(Imax_a, interval = c(I_fix, 2*I_fix))$minimum
   
   a <- a_Imax(Imax)
   for (k in 1:K) {
@@ -93,22 +93,24 @@ boundaries <- function(I_vec, alpha, beta, delta, pho){
 
 ####################################
 # #test
-# I_vec <- c(1/3,2/3,1)
+# I_vec <- c(3/5,1)
+# sig_z <- generate_sig(I_vec)
 # alpha=0.025
-# beta=0.5
+# beta=0.1
 # delta=1
 # pho=1
-# bb <- boundaries(I_vec, alpha, beta=0.2, delta, pho)
-# 1-pmvnorm(rep(0,K), corr=sig_z, lower=-Inf, upper=bb$b, seed = 1) # type I
-# 1-pmvnorm(delta*sqrt(bb$I_max*I_vec), corr = sig_z, lower=bb$a, upper=Inf) #type II
+# bb <- boundaries(I_vec, alpha, beta, delta, pho)
+# 1-pmvnorm(rep(0,2), corr=sig_z, lower=-Inf, upper=bb$b, seed = 1) # type I
+# pnorm(bb$a[1], mean = delta*sqrt(bb$I_max*I_vec[1])) + 
+#   pmvnorm(delta*sqrt(bb$I_max*I_vec), sigma = sig_z, lower=c(bb$a[1], -Inf), upper=bb$b) #type II
 # abi <- error_spending_func_1s(
 #     K = 3,           #number of groups
 #     alpha,       #required significance
-#     beta=0.2,        #required power  
+#     beta=0.2,        #required power
 #     delta,       #power requirement
 #     I=I_vec*bb$I_max,         #Vector of observed information levels
 #     I_max=bb$I_max,       #maximum information
-#     
+# 
 #     #Choice of form for the error spending functions - taking input t which is the
 #     #obtained fraction of the maximum information.
 #     error_spend_f,
@@ -117,9 +119,75 @@ boundaries <- function(I_vec, alpha, beta, delta, pho){
 # 1-pmvnorm(rep(0,K), corr=sig_z, lower=-Inf, upper=abi[[2]], seed = 1)
 # 1-pmvnorm(delta*sqrt(bb$I_max*I_vec), corr = sig_z, lower=abi[[1]], upper=Inf)
 
+# this function computes boundaries (non-binding futility) given I_max and I_vec
+get_boundaries <- function(I_max, I_vec, alpha, beta, delta, pho){
+  sig_z <- generate_sig(I_vec)
+  mean_vec <- delta*sqrt(Imax*I_vec) # for power
+  # Stop early if information level reaches I_max
+  index <- which(I_vec > 1)[1]
+  if (!is.na(index)){
+    I_vec[index] <- 1
+    I_vec <- I_vec[1:index]
+  }
+  
+  K = length(I_vec)
+  a <- b <- c()
+  ###########################
+  # upper boundaries
+  for(k in 1:K){
+    if(k==1){
+      error1 <- error_spend_f(I_vec[k], alpha, pho)
+      b[k] <- -qnorm(error1)
+    }else{
+      error1 <- error_spend_f(I_vec[k], alpha, pho)-error_spend_f(I_vec[k-1], alpha, pho)
+      b[k] <- optimise(f = function(b_k) (pmvnorm(rep(0,k), corr = sig_z[1:k,1:k], 
+                                                lower=c(rep(-Inf,k-1),b_k), upper=c(b[1:k-1],Inf))-error1)^2,
+                      interval=c(0,5))$minimum
+    }
+  }
+  # #test
+  # 1-pmvnorm(rep(0,K), corr=sig_z, lower=-Inf, upper=b, seed = 1)
+  ###########################
+  # lower boundaries
+  abort_first=FALSE # if the first lower bound is above the upper bound
+  # a given Imax
+  if(K==1){
+    a = b = -qnorm(alpha)
+  }else{
+    for(k in 1:K){
+      if(k==1){
+        error2 <- error_spend_g(I_vec[k], beta, pho)
+        a[k] <- qnorm(error2, mean = mean_vec[1], sd = 1)
+        # if a>b before final analysis
+        if(a[1]>=b[1]){
+          b <- -qnorm(alpha)
+          abort_first=T
+          break
+        }
+      }else{
+        error2 <- error_spend_g(I_vec[k], beta, pho)-error_spend_g(I_vec[k-1], beta, pho)
+        a[k] <- optimize(f = function(a_k) {(pmvnorm(mean_vec[1:k], corr = sig_z[1:k,1:k], 
+                                                     lower=c(a[1:k-1],-Inf), upper=c(b[1:k-1],a_k))-error2)^2},
+                         interval = c(-2,5))$minimum
+      }
+    }
+  }
+
+  #update K
+  K=length(b)
+  a[K] <- b[K]
+  
+  # #test
+  # 1-pmvnorm(delta*sqrt(Imax*I_vec), corr = sig_z, lower=a, upper=Inf)
+  return(list(a=a,b=b, abort_first=abort_first))
+}
+
 
 # error spending functions
-error_spend_f = function(t, alpha, pho=1){
-  return(alpha * min(t^pho,1))}
+error_spend_f <- function(t, alpha, pho=1){
+  # Apply the function to each element of the vector t
+  sapply(t, function(ti) alpha * min(ti^pho, 1))
+}
 error_spend_g = function(t, beta, pho=1){
-  return(beta * min(t^pho,1))}
+  sapply(t, function(ti) beta * min(ti^pho,1))
+}

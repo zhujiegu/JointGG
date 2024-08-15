@@ -4,10 +4,11 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
+  fit_t <- fit_survival(dat, model_complex, fit_y$reffects.individual)
+  
   n_w_adj <- aGH_n_w(fit_y$reffects.individual, fit_y$var.reffects, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
   
-  if(init_params=='two-stage'){
-    fit_t <- fit_survival(dat, model_complex, fit_y$reffects.individual)
+  if(all(init_params=='two-stage')){
     init_params <- list(G=fit_y$G,
                         a0=fit_y$a0,
                         a1=fit_y$a1,

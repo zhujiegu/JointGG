@@ -144,6 +144,105 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
               RMST_treat= mean_treat, RMST_control=mean_control,grt_treat=grt_treat, grt_control=grt_control))  
 }
 
+# model_fit is the output from JM (piecewise-PH, one knot)
+z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
+  
+  b_dim = ncol(model_fit$coefficients$D)
+  
+  # get covariates and random effects of i
+  treat_vec = model_fit$data.id$treat
+  # get coefficients
+  a0 <- model_fit$coefficients$betas['(Intercept)']
+  a1 <- model_fit$coefficients$betas['visits_age']
+  a2 <- model_fit$coefficients$betas['visits_age:treat']
+  gam <- model_fit$coefficients$gammas['treat']
+  alp <- model_fit$coefficients$alpha['alpha']
+  xi1 <- model_fit$coefficients$xi['xi.1']
+  xi2 <- model_fit$coefficients$xi['xi.2']
+  
+  # standard GH rule
+  GH <- gauher(GH_level_z)
+  # expand grid
+  nodes <- as.matrix(expand.grid(rep(list(GH$x), b_dim)))
+  w <- as.matrix(expand.grid(rep(list(GH$w), b_dim))) 
+  # 2^(p/2) w*exp(||nodes||^2)
+  w <- 2^(b_dim/2)*apply(w, 1, prod)*exp(rowSums(nodes*nodes))
+  GH_nodes = adjust_nodes(mu_b_i=as.data.frame(t(rep(0,b_dim))), var_b_i=model_fit$coefficients$D, nodes,w)
+  
+  # adjust the weights by the marginal density of random effects
+  f_b <- sapply(1:GH_level_z^2, function(e) Rfast::dmvnorm(as.matrix(GH_nodes$n)[e,], mu = rep(0, b_dim), 
+                                                           sigma =  model_fit$coefficients$D))
+  GH_nodes$w <- GH_nodes$w * f_b
+  
+  # treatment =1
+  treat_list <- lapply(1:GH_level_z^b_dim, function(row){
+    treat=1
+    r=GH_nodes$n[row,] %>% as.matrix
+    
+    ##########################
+    # mean_t
+    RMST <- RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2)
+    ######################
+    # gradient
+    RMST_grt <- c(grad(function(x) RMST_CoxJM_piecewise(a0 = x,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a0),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1 = x,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a1),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2 = x,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a2),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam = x,alp,xi1,xi2, r, treat, up_limit, knot=2), gam),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
+
+    #############
+    # combine
+    return(list(RMST = RMST, RMST_grt = RMST_grt))
+  })
+  
+  # treatment =0
+  control_list <- lapply(1:GH_level_z^b_dim, function(row){
+    treat=0
+    r=GH_nodes$n[row,] %>% as.matrix
+    
+    ##########################
+    # mean_t
+    RMST <- RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2)
+    ######################
+    # gradient
+    RMST_grt <- c(grad(function(x) RMST_CoxJM_piecewise(a0 = x,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a0),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1 = x,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a1),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2 = x,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a2),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam = x,alp,xi1,xi2, r, treat, up_limit, knot=2), gam),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
+                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
+    
+    #############
+    # combine
+    return(list(RMST = RMST, RMST_grt = RMST_grt))
+  })
+  
+  RMST_treat_l <- sapply(treat_list, function(e) e$RMST)
+  grt_treat_l <- lapply(treat_list, function(e) e$RMST_grt)
+  RMST_control_l <- sapply(control_list, function(e) e$RMST)
+  grt_control_l <- lapply(control_list, function(e) e$RMST_grt)
+  
+  RMST_treat <- sum(RMST_treat_l * GH_nodes$w)
+  RMST_control <- sum(RMST_control_l * GH_nodes$w)
+  grt_treat <- Reduce('+', Map('*', grt_treat_l, GH_nodes$w))
+  grt_control <- Reduce('+', Map('*', grt_control_l, GH_nodes$w))
+  
+  delta_RMST = RMST_treat - RMST_control
+  delta_RMST_grt =grt_treat-grt_control
+  
+  I_params <- model_fit$Hessian[c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2'),
+                   c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2')]
+  
+  var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
+                            solve(I_params) %*%
+                            matrix(delta_RMST_grt, ncol = 1))
+  
+  return(list(delta_RMST = delta_RMST, var_delta_RMST=var_delta))  
+}
+
 # incert random effect = 0
 z_statistic_naive <- function(model_fit, up_limit){
   
@@ -339,6 +438,30 @@ get_RMST_var_GG <- function(model_fit, up_limit){
   return(list(delta_RMST=delta_RMST, var_delta=var_delta))
 }
 
+
+RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2){
+  # random effects
+  r0 = r[,1]
+  r1 = r[,2]
+  part <- alp*(a1+r1+a2*treat)
+  part_com <- exp(gam*treat+alp*(a0+r0))/part
+  
+  S_CoxJM_piecewise <- function(t) {
+    # Define a helper function to apply the piecewise logic to a single value of t
+    calculate_H <- function(ti) {
+      if (ti <= knot) {
+        H = xi1 * part_com * (exp(ti * part) - 1)
+      } else {
+        H = part_com * ((xi1 - xi2) * exp(knot * part) + xi2 * exp(ti * part) - xi1)
+      }
+      return(H)
+    }
+    H_values <- sapply(t, calculate_H)
+    return(exp(-H_values))
+  }
+  RMST <- integrate(f = S_CoxJM_piecewise, lower = 0, upper = up_limit)
+  return(RMST$value)
+}
 
 mean_t <- function(mu, sigma, q, up_limit){
   error_occurred <- TRUE
