@@ -41,53 +41,43 @@ fit_longitudinal <- function(dat){
 ################################
 # extract BLUPs and variance of random effects
 ################################
-fit_survival <- function(dat, model_complex, reffects.individual){
+fit_survival <- function(dat, model_complex, reffects.individual=NULL){
   print('start fitting survival data in two-stage')
   ###############################
   # define which betas need to be updated based on the complexity of the model
   if(model_complex=='normal'){
     # Initialize parameters
     # browser()
-    fit_t_no_reff_tmp <- optim(rep(0.8,5),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
-                               gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  
-                               method = 'L-BFGS-B', hessian = T)
+    fit_t_no_reff_tmp <- optim_trycatch(initial_vec=rep(0,5), dat, model_complex, reffects.individual, rm_reff=T)
     fit_t_no_reff<- c(fit_t_no_reff_tmp$par[1:2],0,0, fit_t_no_reff_tmp$par[3:5])
-    # Start optimization with error handling
-    fit_t <- tryCatch({
-      fit_t_tmp <- optim(fit_t_no_reff, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-                         gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual), method = 'L-BFGS-B')
-      if (!is.null(fit_t_tmp$convergence) && fit_t_tmp$convergence == 0) {
-        fit_t_tmp$par
-      } else {
-        print("Optimization in two-stage survival failed, method: L-BFGS-B")
-        fit_t_no_reff
-      }
-    }, error = function(e) {
-      print("Optimization in two-stage survival failed, method: L-BFGS-B")
-      fit_t_no_reff
-    })
+    # Start optimization with random effects
+    fit_t <- optim_trycatch(fit_t_no_reff, dat, model_complex, reffects.individual, rm_reff=F)
+    if (!is.null(fit_t$convergence) && fit_t$convergence == 0) {
+      fit_t <- fit_t$par
+    } else {
+      fit_t <- fit_t_no_reff
+    }
+  }
+  if(model_complex=='GG'){
+    # Initialize parameters
+    # browser()
+    fit_t_no_reff_tmp <- optim_trycatch(initial_vec=rep(0,3), dat, model_complex, reffects.individual, rm_reff=T)
+    fit_t_no_reff<- fit_t_no_reff_tmp
+    fit_t<- fit_t_no_reff_tmp$par
   }
   if(model_complex=='AFT'){
     # Initialize parameters
     # browser()
-    fit_t_no_reff_tmp <- optim(rep(0.8,4),fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff=T), 
-                               gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff=T),  
-                               method = 'L-BFGS-B', hessian = T)
+    fit_t_no_reff_tmp <- optim_trycatch(initial_vec=rep(0,4), dat, model_complex, reffects.individual, rm_reff=T)
     fit_t_no_reff<- c(fit_t_no_reff_tmp$par[1:2],0,0, fit_t_no_reff_tmp$par[3:4])
     # Start optimization with error handling
-    fit_t <- tryCatch({
-      fit_t_tmp <- optim(fit_t_no_reff, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual), 
-                         gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual), method = 'L-BFGS-B')
-      if (!is.null(fit_t_tmp$convergence) && fit_t_tmp$convergence == 0) {
-        fit_t_tmp$par
-      } else {
-        print("Optimization in two-stage survival failed, method: L-BFGS-B")
-        fit_t_no_reff
-      }
-    }, error = function(e) {
-      print("Optimization in two-stage survival failed, method: L-BFGS-B")
-      fit_t_no_reff
-    })
+    # Start optimization with random effects
+    fit_t <- optim_trycatch(fit_t_no_reff, dat, model_complex, reffects.individual, rm_reff=F)
+    if (!is.null(fit_t$convergence) && fit_t$convergence == 0) {
+      fit_t <- fit_t$par
+    } else {
+      fit_t <- fit_t_no_reff
+    }
   }
   if(model_complex=='saturated'){
     stop('two-step to be completed')
@@ -131,7 +121,7 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F)
       z_sigma = cbind(1, 0, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
-    if(model_complex=='test'){
+    if(model_complex=='GG'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     mu <- z_mu %*% beta_mu %>% as.numeric
@@ -167,7 +157,7 @@ ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_ref
       z_sigma = cbind(1, 0, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
-    if(model_complex=='test'){
+    if(model_complex=='GG'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     mu <- z_mu %*% beta_mu %>% as.numeric
@@ -249,6 +239,11 @@ beta_vec_to_param <- function(params_vec, model_complex, rm_reff=F){
       beta_q=c(params_vec[6],0,0,0) 
     }
   }
+  if(model_complex=='GG'){
+      beta_mu=c(params_vec[1], 0,0,0)
+      beta_sigma=c(params_vec[2],0,0,0)
+      beta_q=c(params_vec[3],0,0,0)
+  }
   return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
 }
 
@@ -272,6 +267,15 @@ beta_vec_transform <- function(vec, model_complex, type=c('collapse', 'expand'),
     }else{
       result <- vec[keep]
       if(rm_reff) result <- result[-(3:4)]
+    }
+  }
+  if(model_complex=='GG'){
+    keep <- c(1,5,9) #positions in c(beta_mu, beta_sigma, beta_q)
+    if(type == 'expand'){
+      result <- rep(0,12)
+      result[keep] <- vec
+    }else{
+      result <- vec[keep]
     }
   }
   if(model_complex=='saturated'){
@@ -301,8 +305,30 @@ beta_hes_transform <- function(hes, model_complex, type=c('collapse', 'expand'))
       result <- hes[keep, keep]
     }
   }
+  if(model_complex=='GG'){
+    keep <- c(1,5,9)
+    if(type == 'expand'){
+      result <- matrix(0, nrow=12, ncol=12)
+      result[keep, keep] <- hes
+    }else{
+      result <- hes[keep, keep]
+    }
+  }
   if(model_complex=='saturated'){
     stop('add this model complexity in beta_hes_transform')
   }
   return(result)
 }
+
+
+optim_trycatch <- function(initial_vec, dat, model_complex, reffects.individual, rm_reff){
+  fit_t <- tryCatch({
+    optim(initial_vec, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff), 
+          gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff),  
+          method = 'L-BFGS-B', hessian = T)
+  }, error = function(e) {
+    optim(initial_vec, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
+          method = 'Nelder-Mead', hessian = T)
+  })
+  return(fit_t)
+} 
