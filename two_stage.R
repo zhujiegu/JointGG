@@ -62,7 +62,7 @@ fit_survival <- function(dat, model_complex, reffects.individual=NULL){
     # Initialize parameters
     # browser()
     fit_t_no_reff_tmp <- optim_trycatch(initial_vec=rep(0,3), dat, model_complex, reffects.individual, rm_reff=T)
-    fit_t_no_reff<- fit_t_no_reff_tmp
+    fit_t_no_reff<- fit_t_no_reff_tmp$par
     fit_t<- fit_t_no_reff_tmp$par
   }
   if(model_complex=='AFT'){

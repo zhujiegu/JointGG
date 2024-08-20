@@ -45,7 +45,7 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
       z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
-    if(model_complex=='test'){
+    if(model_complex=='GG'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     
@@ -93,7 +93,7 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
       z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
-    if(model_complex=='test'){
+    if(model_complex=='GG'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     
@@ -191,7 +191,7 @@ z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
                   grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
                   grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
                   grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
-
+    
     #############
     # combine
     return(list(RMST = RMST, RMST_grt = RMST_grt))
@@ -234,7 +234,7 @@ z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
   delta_RMST_grt =grt_treat-grt_control
   
   I_params <- model_fit$Hessian[c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2'),
-                   c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2')]
+                                c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2')]
   
   var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
                             solve(I_params) %*%
@@ -274,7 +274,7 @@ z_statistic_naive <- function(model_fit, up_limit){
     z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
-  if(model_complex=='test'){
+  if(model_complex=='GG'){
     z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   
@@ -312,7 +312,7 @@ z_statistic_naive <- function(model_fit, up_limit){
     z_sigma = c(1,treat, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
-  if(model_complex=='test'){
+  if(model_complex=='GG'){
     z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   
@@ -365,7 +365,7 @@ get_RMST_var_GG <- function(model_fit, up_limit){
     z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
-  if(model_fit$model_complex=='test'){
+  if(model_fit$model_complex=='GG'){
     z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   
@@ -405,7 +405,7 @@ get_RMST_var_GG <- function(model_fit, up_limit){
     z_sigma = c(1,0, 0, 0) %>% matrix(nrow=1)
     z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
-  if(model_fit$model_complex=='test'){
+  if(model_fit$model_complex=='GG'){
     z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
   }
   
@@ -432,10 +432,18 @@ get_RMST_var_GG <- function(model_fit, up_limit){
   
   delta_RMST = RMST_treat - RMST_contl
   delta_RMST_grt =grt_treat-grt_contl
+  # variance
+  var_RMST_treat <- as.numeric(matrix(grt_treat, nrow = 1) %*% 
+                                 solve(I_beta) %*%
+                                 matrix(grt_treat, ncol = 1))
+  var_RMST_contl <- as.numeric(matrix(grt_contl, nrow = 1) %*% 
+                                 solve(I_beta) %*%
+                                 matrix(grt_contl, ncol = 1))
   var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
                             solve(I_beta) %*%
                             matrix(delta_RMST_grt, ncol = 1))
-  return(list(delta_RMST=delta_RMST, var_delta=var_delta))
+  return(list(delta_RMST=delta_RMST, var_delta=var_delta, RMST_treat=RMST_treat,
+              RMST_contl=RMST_contl, var_RMST_treat=var_RMST_treat, var_RMST_contl=var_RMST_contl))
 }
 
 
