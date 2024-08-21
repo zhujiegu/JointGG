@@ -137,7 +137,7 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
   delta_mean_grt =grt_treat-grt_control
   
   var_delta <- as.numeric(matrix(delta_mean_grt, nrow = 1) %*% 
-                            solve(beta_hes_transform(model_fit$I_beta, model_complex, 'collapse')) %*%
+                            ginv(beta_hes_transform(model_fit$I_beta, model_complex, 'collapse')) %*%
                             matrix(delta_mean_grt, ncol = 1))
   
   return(list(delta_RMST = delta_mean_t, var_delta_RMST=var_delta, delta_RMST_grt =delta_mean_grt,
@@ -237,7 +237,7 @@ z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
                                 c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2')]
   
   var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
-                            solve(I_params) %*%
+                            ginv(I_params) %*%
                             matrix(delta_RMST_grt, ncol = 1))
   
   return(list(delta_RMST = delta_RMST, var_delta_RMST=var_delta))  
@@ -434,13 +434,13 @@ get_RMST_var_GG <- function(model_fit, up_limit){
   delta_RMST_grt =grt_treat-grt_contl
   # variance
   var_RMST_treat <- as.numeric(matrix(grt_treat, nrow = 1) %*% 
-                                 solve(I_beta) %*%
+                                 ginv(I_beta) %*%
                                  matrix(grt_treat, ncol = 1))
   var_RMST_contl <- as.numeric(matrix(grt_contl, nrow = 1) %*% 
-                                 solve(I_beta) %*%
+                                 ginv(I_beta) %*%
                                  matrix(grt_contl, ncol = 1))
   var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
-                            solve(I_beta) %*%
+                            ginv(I_beta) %*%
                             matrix(delta_RMST_grt, ncol = 1))
   return(list(delta_RMST=delta_RMST, var_delta=var_delta, RMST_treat=RMST_treat,
               RMST_contl=RMST_contl, var_RMST_treat=var_RMST_treat, var_RMST_contl=var_RMST_contl))

@@ -208,11 +208,11 @@ get_reffects_var <- function(model_fit , dat_i){
   G=unclass(getVarCov(model_fit))
   
   # # Check BLUPs
-  # (G%*%t.z.mat)%*%solve((z.mat%*%G%*%t.z.mat+resid.var*corr.mat))%*%(dat_perID_y[[i]]$value-x.mat%*%coef.fixed)
+  # (G%*%t.z.mat)%*%ginv((z.mat%*%G%*%t.z.mat+resid.var*corr.mat))%*%(dat_perID_y[[i]]$value-x.mat%*%coef.fixed)
   
   # variance of random effect
   var.reffects = G - (G%*%t.z.mat)%*%
-    solve((z.mat%*%G%*%t.z.mat+resid.var*corr.mat))%*%(z.mat%*%t(G))
+    ginv((z.mat%*%G%*%t.z.mat+resid.var*corr.mat))%*%(z.mat%*%t(G))
   return(var.reffects)
 }
 
@@ -240,9 +240,9 @@ beta_vec_to_param <- function(params_vec, model_complex, rm_reff=F){
     }
   }
   if(model_complex=='GG'){
-      beta_mu=c(params_vec[1], 0,0,0)
-      beta_sigma=c(params_vec[2],0,0,0)
-      beta_q=c(params_vec[3],0,0,0)
+    beta_mu=c(params_vec[1], 0,0,0)
+    beta_sigma=c(params_vec[2],0,0,0)
+    beta_q=c(params_vec[3],0,0,0)
   }
   return(list(beta_mu=beta_mu, beta_sigma=beta_sigma, beta_q=beta_q))
 }
@@ -330,5 +330,8 @@ optim_trycatch <- function(initial_vec, dat, model_complex, reffects.individual,
     optim(initial_vec, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
           method = 'Nelder-Mead', hessian = T)
   })
+  # replace the hessian
+  fit_t$hessian <- hessian(func = function(vec) ll_t(vec, dat1, model_complex='GG', reffects.individual=NULL, rm_reff=T),
+                           x = fit_t$par)
   return(fit_t)
 } 
