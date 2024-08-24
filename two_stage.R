@@ -99,6 +99,10 @@ fit_survival <- function(dat, model_complex, reffects.individual=NULL){
 
 
 ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
+  if(is.null(reffects.individual)){
+    rm_reff=T
+    warning('random effects are not supplied, using 0 instead')
+  }
   betas <- beta_vec_to_param(params_vec, model_complex, rm_reff=rm_reff)
   beta_mu <- betas$beta_mu
   beta_sigma <- betas$beta_sigma
@@ -108,18 +112,29 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F)
   f_t <- c()
   for (i in 1:n){
     if(model_complex=='saturated'){
-      z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, reffects.individual[[i]]) %>% as.matrix
-      # z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, dat$true_b[i,2:3]) %>% as.matrix
+      if(rm_reff){
+        z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, 0,0) %>% as.matrix
+      }else{
+        z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, reffects.individual[[i]]) %>% as.matrix
+        # z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, dat$true_b[i,2:3]) %>% as.matrix
+      }
     }
     if(model_complex=='normal'){
-      z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      if(rm_reff){
+        z_mu = cbind(1, dat_t[i,]$treat,0,0) %>% as.matrix
+      }else{
+        z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      }
       z_sigma = cbind(1, dat_t[i,]$treat, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     if(model_complex=='AFT'){
-      z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
-      z_sigma = cbind(1, 0, 0, 0) %>% matrix(nrow=1)
-      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      if(rm_reff){
+        z_mu = cbind(1, dat_t[i,]$treat,0,0) %>% as.matrix
+      }else{
+        z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      }
+      z_sigma = z_q = c(1, 0, 0, 0) %>% matrix(nrow=1)
     }
     if(model_complex=='GG'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
@@ -134,7 +149,10 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F)
 }
 
 ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
-  
+  if(is.null(reffects.individual)){
+    rm_reff=T
+    warning('random effects are not supplied, using 0 instead')
+  }
   betas <- beta_vec_to_param(params_vec, model_complex, rm_reff=rm_reff)
   beta_mu <- betas$beta_mu
   beta_sigma <- betas$beta_sigma
@@ -144,18 +162,29 @@ ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_ref
   grd_mu <- grd_sigma <-grd_q <- matrix(NA, nrow=n, ncol=4)
   for (i in 1:n){
     if(model_complex=='saturated'){
-      z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, reffects.individual[[i]]) %>% as.matrix
-      # z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, dat$true_b[i,2:3]) %>% as.matrix
+      if(rm_reff){
+        z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, 0,0) %>% as.matrix
+      }else{
+        z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, reffects.individual[[i]]) %>% as.matrix
+        # z_mu =z_sigma = z_q = cbind(1, dat_t[i,]$treat, dat$true_b[i,2:3]) %>% as.matrix
+      }
     }
     if(model_complex=='normal'){
-      z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      if(rm_reff){
+        z_mu = cbind(1, dat_t[i,]$treat,0,0) %>% as.matrix
+      }else{
+        z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      }
       z_sigma = cbind(1, dat_t[i,]$treat, 0, 0) %>% matrix(nrow=1)
       z_q = c(1, 0,0,0)%>% matrix(nrow=1)
     }
     if(model_complex=='AFT'){
-      z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
-      z_sigma = cbind(1, 0, 0, 0) %>% matrix(nrow=1)
-      z_q = c(1, 0,0,0)%>% matrix(nrow=1)
+      if(rm_reff){
+        z_mu = cbind(1, dat_t[i,]$treat,0,0) %>% as.matrix
+      }else{
+        z_mu = cbind(1, dat_t[i,]$treat,reffects.individual[[i]]) %>% as.matrix
+      }
+      z_sigma = z_q = c(1, 0, 0, 0) %>% matrix(nrow=1)
     }
     if(model_complex=='GG'){
       z_mu =z_sigma = z_q = c(1, 0,0,0)%>% matrix(nrow=1)
@@ -331,7 +360,7 @@ optim_trycatch <- function(initial_vec, dat, model_complex, reffects.individual,
           method = 'Nelder-Mead', hessian = T)
   })
   # replace the hessian
-  fit_t$hessian <- hessian(func = function(vec) ll_t(vec, dat1, model_complex='GG', reffects.individual=NULL, rm_reff=T),
+  fit_t$hessian <- hessian(func = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
                            x = fit_t$par)
   return(fit_t)
 } 
