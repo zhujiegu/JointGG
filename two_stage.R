@@ -349,15 +349,22 @@ beta_hes_transform <- function(hes, model_complex, type=c('collapse', 'expand'))
   return(result)
 }
 
-
+# try L-BFGS-B, Nelder-Mead, SANN consecutively
 optim_trycatch <- function(initial_vec, dat, model_complex, reffects.individual, rm_reff){
   fit_t <- tryCatch({
     optim(initial_vec, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff), 
           gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff),  
           method = 'L-BFGS-B', hessian = T)
   }, error = function(e) {
-    optim(initial_vec, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
-          method = 'Nelder-Mead', hessian = T)
+    tryCatch({
+      optim(initial_vec, 
+            fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
+            method = 'Nelder-Mead', hessian = TRUE)
+    }, error = function(e2) {
+      optim(initial_vec,
+            fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
+            method = 'SANN', hessian = TRUE)
+    })
   })
   # replace the hessian
   fit_t$hessian <- hessian(func = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),

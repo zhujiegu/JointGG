@@ -4,11 +4,10 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
-  fit_t <- fit_survival(dat, model_complex, fit_y$reffects.individual)
-  
   n_w_adj <- aGH_n_w(fit_y$reffects.individual, fit_y$var.reffects, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
   
   if(all(init_params=='two-stage')){
+    fit_t <- fit_survival(dat, model_complex, fit_y$reffects.individual)
     init_params <- list(G=fit_y$G,
                         a0=fit_y$a0,
                         a1=fit_y$a1,
@@ -17,6 +16,8 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
                         beta_mu=fit_t$beta_mu,
                         beta_sigma=fit_t$beta_sigma,
                         beta_q=fit_t$beta_q)
+  }else{
+    fit_t <- NULL
   }
   params <- init_params
   logl <- c()
@@ -30,11 +31,12 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   dat_perID_t <- dat_perID_t[IDs]
   
   tic <- proc.time()
-  
+  params_list <- list()
+  params_list[[1]] <- init_params  # intial parameter, corresponding to logl[1]
   for(i in 1:steps){
     step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
     params = step_outp$params
-    
+    params_list[[i+1]] <- params
     ##################################
     # # testing
     # params_list[[i]] <- params
@@ -44,8 +46,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
     if(i > 1){
       if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
       if(logl[1]<0 && logl[i] < 2*logl[1]){
-        print('EM algorithm may have diverged, return the initial parameters (from two-stage)')
-        params <- init_params
+        print('EM algorithm may have diverged')
         refine_GH <- FALSE
         break
       }
@@ -55,9 +56,12 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
     }
   }
+  # use the best parameters in the first stage
+  params <- params_list[[which.max(logl)]]
   
   if(refine_GH){
     print(paste('stage I of EM complete, Nr. step =', i, 'Now update GH nodes and start second phase'))
+    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
     n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
     
     # stage two, using adaptive GH (posterior of b conditional on full data)
@@ -65,7 +69,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
       # update node every step
       step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
       params = step_outp$params
-      
+      params_list[[i+j+1]] <- params
       ##################################
       # # testing
       # params_list[[j]] <- params
@@ -76,8 +80,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
       
       if(logl[i+j]-logl[i+j-1] < 0) print(paste('Log likelihood decreased', logl[i+j]-logl[i+j-1], 'in step',i+j))
       if(logl[1]<0 && logl[i+j] < 2*logl[1]){
-        print('EM algorithm may have diverged, return the initial parameters (from two-stage)')
-        params <- init_params
+        print('EM algorithm may have diverged')
         break
       }
       if(abs(logl[i+j]-logl[i+j-1]) < rel_tol*abs(logl[2]-logl[1])) break
@@ -88,6 +91,11 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   }else{
     j=0
   }
+  # update BLUPs and nodes for information matrix
+  params <- params_list[[which.max(logl)]]
+  step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+  n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+  
   # # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
   # for(i in 1:floor(0.9*steps)){
   #   step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
