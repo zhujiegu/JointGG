@@ -58,12 +58,13 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   }
   # use the best parameters in the first stage
   params <- params_list[[which.max(logl)]]
+  print(paste('Stage I of EM complete, Nr. step =', i))
   
   if(refine_GH){
-    print(paste('stage I of EM complete, Nr. step =', i, 'Now update GH nodes and start second phase'))
+    print(paste('Updating GH nodes'))
     step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-    n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
-    
+    n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+    print('Start second phase')
     # stage two, using adaptive GH (posterior of b conditional on full data)
     for(j in 1:steps){
       # update node every step
@@ -88,13 +89,15 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
         print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
       }
     }
+    # conclude with the best params in the second stage
+    params <- params_list[[which.max(logl[-(1:i)]) + i]]
   }else{
     j=0
   }
   # update BLUPs and nodes for information matrix
-  params <- params_list[[which.max(logl)]]
+  print(paste('Updating GH nodes'))
   step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-  n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_list, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+  n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
   
   # # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
   # for(i in 1:floor(0.9*steps)){
@@ -203,6 +206,10 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   E_bb <- aGH_b(moment='second', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
   df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as_tibble
   df_E_bb$ID <- names(E_b)
+  
+  # variance of b for adaptive GH
+  E_bb_var <- aGH_b(moment='second-center', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
+  
   # browser()
   #a0
   dat_y <- dat$longitudinal %>% left_join(df_E_b, by = "ID") %>% left_join(df_E_bb, by = "ID")
@@ -221,7 +228,7 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   params$sig_e2 <- update_y$sig_e2/N
   params$G <- Reduce('+', E_bb)/n
   
-  outp <- list(params = params, likl_log=likl_log, E_b=df_E_b, E_b_list=E_b, E_bb_list=E_bb)
+  outp <- list(params = params, likl_log=likl_log, E_b=df_E_b, E_b_list=E_b, E_bb_list=E_bb, E_bb_var=E_bb_var)
   return(outp)
 }
 

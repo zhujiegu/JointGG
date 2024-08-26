@@ -1,5 +1,5 @@
 # E[b|D]
-aGH_b <- function(moment=c('first','second'), list_com, n_w_adj, list_likl, Nr.cores=1){
+aGH_b <- function(moment=c('first','second','second-center'), list_com, n_w_adj, list_likl, Nr.cores=1){
   moment = match.arg(moment)
   IDs <- names(list_com)
   k=length(n_w_adj[[1]]$w)
@@ -12,9 +12,27 @@ aGH_b <- function(moment=c('first','second'), list_com, n_w_adj, list_likl, Nr.c
     })
   }
   if(moment=='second'){
+    # uncentered
     b_crossprod <- mclapply(n_w_adj, mc.cores =Nr.cores, function(i){
-      lapply(1:k, function(row) {
+      lapply(1:k, function(row){
         i$n[row,] %>% as.matrix %>% crossprod
+        # (i$n[row,]-colMeans(i$n)) %>% as.matrix %>% crossprod
+      })
+    })
+    names(b_crossprod) <- IDs
+    
+    results <- mclapply(IDs, mc.cores =Nr.cores, function(i) {
+      # Multiply each cross_product matrix by corresponding element in vec and sum up the matrices
+      summed_matrix <- Reduce(`+`, Map(function(cp, scalar) cp * scalar, b_crossprod[[i]], list_com[[i]]))
+      return(summed_matrix)
+    })
+  }
+  if(moment=='second-center'){
+    # uncentered
+    b_crossprod <- mclapply(n_w_adj, mc.cores =Nr.cores, function(i){
+      lapply(1:k, function(row){
+        # i$n[row,] %>% as.matrix %>% crossprod
+        (i$n[row,]-colMeans(i$n)) %>% as.matrix %>% crossprod
       })
     })
     names(b_crossprod) <- IDs
@@ -409,7 +427,9 @@ multiply_sum_matrices <- function(matrices, scalars) {
 
 adjust_nodes <- function(mu_b_i, var_b_i, nodes, w){
   # the lower triangle L
-  L = chol(var_b_i) %>% t
+  L = tryCatch(chol(var_b_i), error=function(e){
+    chol(var_b_i+diag(1e-8, ncol=ncol(var_b_i), nrow=ncol(var_b_i)))
+  }) %>% t
   # 2^(p/2)|L|w*exp(||nodes||^2)
   w_i = det(L)*w
   # mu + \sqrt(2)L*node 
