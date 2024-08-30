@@ -1,5 +1,5 @@
 # integrate out random effects
-z_statistic <- function(model_fit, up_limit, GH_level_z){
+z_statistic <- function(model_fit, up_limit, GH_level_z, true_param=F){
   
   b_dim = ncol(model_fit$params$G)
   model_complex = model_fit$model_complex
@@ -136,12 +136,17 @@ z_statistic <- function(model_fit, up_limit, GH_level_z){
   delta_mean_t = mean_treat - mean_control
   delta_mean_grt =grt_treat-grt_control
   
-  var_delta <- as.numeric(matrix(delta_mean_grt, nrow = 1) %*% 
-                            ginv(beta_hes_transform(model_fit$I_beta, model_complex, 'collapse')) %*%
-                            matrix(delta_mean_grt, ncol = 1))
-  
-  return(list(delta_RMST = delta_mean_t, var_delta_RMST=var_delta, delta_RMST_grt =delta_mean_grt,
-              RMST_treat= mean_treat, RMST_control=mean_control,grt_treat=grt_treat, grt_control=grt_control))  
+  if(true_param){
+    return(list(delta_RMST = delta_mean_t, delta_RMST_grt =delta_mean_grt,
+                RMST_treat= mean_treat, RMST_control=mean_control,grt_treat=grt_treat, grt_control=grt_control))  
+  }else{
+    var_delta <- as.numeric(matrix(delta_mean_grt, nrow = 1) %*% 
+                              ginv(beta_hes_transform(model_fit$I_beta, model_complex, 'collapse')) %*%
+                              matrix(delta_mean_grt, ncol = 1))
+    
+    return(list(delta_RMST = delta_mean_t, var_delta_RMST=var_delta, delta_RMST_grt =delta_mean_grt,
+                RMST_treat= mean_treat, RMST_control=mean_control,grt_treat=grt_treat, grt_control=grt_control))
+  }
 }
 
 # model_fit is the output from JM (piecewise-PH, one knot)
