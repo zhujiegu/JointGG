@@ -1,6 +1,7 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=1, model_complex, GH_level, refine_GH=F){
+JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=1, model_complex, 
+                  GH_level, GH_level_I=15, refine_GH=F, full_adaptive=T){
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
@@ -44,30 +45,37 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
     logl[i] = step_outp$likl_log
     
     if(i > 1){
-      if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
+      if(logl[i]-logl[i-1] < 0) print(paste('log likelihood decreased', logl[i-1]-logl[i], 'in step',i))
       if(logl[1]<0 && logl[i] < 2*logl[1]){
         print('EM algorithm may have diverged')
         refine_GH <- FALSE
         break
       }
-      if(abs(logl[i]-logl[i-1]) < rel_tol*abs(logl[2]-logl[1])) break
+      if(abs(logl[i]-max(logl[1:(i-1)])) < rel_tol*abs(logl[2]-logl[1])) break
     }
     if(i %in% c(2, seq(10, 1e6, by=10))){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
     }
   }
   # use the best parameters in the first stage
-  params <- params_list[[which.max(logl)]]
+  params <- params_list[[which.max(logl)]] #note the i-th logl corresponds to the i-1 th params 
   print(paste('Stage I of EM complete, Nr. step =', i))
   
   if(refine_GH){
-    print(paste('Updating GH nodes'))
-    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-    n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
     print('Start second phase')
+    # browser()
+    if(full_adaptive){
+      print(paste('Updating GH nodes in every iteration'))
+    }else{
+      print(paste('Updating GH nodes'))
+      n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+    }
     # stage two, using adaptive GH (posterior of b conditional on full data)
     for(j in 1:steps){
-      # update node every step
+      if(full_adaptive){
+        # update node every step
+        n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+      }
       step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
       params = step_outp$params
       params_list[[i+j+1]] <- params
@@ -78,15 +86,16 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
       
       logl[i+j] = step_outp$likl_log
       
-      
       if(logl[i+j]-logl[i+j-1] < 0) print(paste('Log likelihood decreased', logl[i+j]-logl[i+j-1], 'in step',i+j))
-      if(logl[1]<0 && logl[i+j] < 2*logl[1]){
-        print('EM algorithm may have diverged')
-        break
-      }
-      if(abs(logl[i+j]-logl[i+j-1]) < rel_tol*abs(logl[2]-logl[1])) break
-      if((i+j) %in% c(2, seq(10, 1e6, by=10))){
-        print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
+      if(j>1){
+        if(logl[1]<0 && logl[i+j] < 2*logl[1]){
+          print('EM algorithm may have diverged')
+          break
+        }
+        if(abs(logl[i+j]-max(logl[(i+1):(i+j-1)])) < rel_tol*abs(logl[2]-logl[1])) break
+        if((i+j) %in% c(2, seq(10, 1e6, by=10))){
+          print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
+        }
       }
     }
     # conclude with the best params in the second stage
@@ -96,8 +105,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   }
   # update BLUPs and nodes for information matrix
   print(paste('Updating GH nodes'))
-  step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-  n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
+  n_w_adj_I <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level_I, dat, plot_nodes=F)
   
   # # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
   # for(i in 1:floor(0.9*steps)){
@@ -121,13 +129,13 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   # }
   
   print('EM finished, starting computing observed information matrix')
-  list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
+  list_com <- aGH_common(params=params, n_w_adj=n_w_adj_I, dat=dat, model_complex, Nr.cores)
   # likelihood of each sample
   list_likl <- lapply(list_com, function(e){
     return(sum(e))
   })
   # Observed information matrix
-  I_beta <-aGH_I_beta(Nr.cores, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+  I_beta <-aGH_I_beta(Nr.cores, dat_perID_t, params, list_com, n_w_adj_I, list_likl,model_complex)
   I_beta <- beta_hes_transform(I_beta, model_complex, 'expand')
   
   # message("Nr steps was ", i)
@@ -197,11 +205,10 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   ##################################################################
   # E(b|D) and E(b^2|D)
   E_b <- aGH_b(moment='first', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
+  E_b <- lapply(E_b, function(i) i %>% t %>% as.data.frame)
   df_E_b <- as_tibble(do.call(rbind, E_b))
   df_E_b$ID <- names(E_b)
   colnames(df_E_b) <- c("Eb0", "Eb1", "ID")
-  E_b <- lapply(E_b, function(i) data.frame(matrix(i,nrow=1)))
-  
   
   E_bb <- aGH_b(moment='second', list_com, n_w_adj, list_likl, Nr.cores=Nr.cores)
   df_E_bb <- do.call(rbind, lapply(E_bb, function(e) c(Ebb0=e[1,1], Eb0b1=e[1,2], Ebb1=e[2,2]))) %>% as_tibble
