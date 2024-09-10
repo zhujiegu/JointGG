@@ -1,25 +1,52 @@
 library(nlme)
-
 ###############################################################################
 # two-stage fiting
 ###############################################################################
 # fitting longitudinal
 fit_longitudinal <- function(dat){
   print('start fitting longitudinal data in two-stage')
-  fit_y <- tryCatch(suppressMessages(lme(value ~ 1 + visits_age + treat:visits_age,  
-                                         random=~ 1 + visits_age|ID,
-                                         weights=varIdent(form=~1|exposure),
-                                         data = dat$longitudinal,
-                                         control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-8,
-                                                              msMaxEval=1000, niterEM = 50))), 
+  fit_y <- tryCatch(lme(value ~ 1 + visits_age + treat:visits_age,
+                        random=~ 1 + visits_age|ID,
+                        # weights=varIdent(form=~1|exposure),
+                        data = dat$longitudinal,
+                        control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-4,
+                                             msMaxEval=1000, niterEM = 50)),
                     error=function(e){
-                      lme(value ~ 1 + visits_age + treat:visits_age,  
-                          random=~ 1 + visits_age|ID,
-                          weights=varIdent(form=~1|exposure),
-                          data = dat$longitudinal,
-                          control = lmeControl(opt='optim'))
+                      tryCatch(lme(value ~ 1 + visits_age + treat:visits_age,
+                                   random=~ 1 + visits_age|ID,
+                                   # weights=varIdent(form=~1|exposure),
+                                   data = dat$longitudinal,
+                                   control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-2,
+                                                        msMaxEval=1000, niterEM = 50)),
+                               error=function(e){
+                                 tryCatch(lme(value ~ 1 + visits_age + treat:visits_age,
+                                              random=~ 1 + visits_age|ID,
+                                              # weights=varIdent(form=~1|exposure),
+                                              data = dat$longitudinal,
+                                              control = lmeControl(opt='optim')),
+                                          error=function(e){
+                                            lme(value ~ 1 + visits_age + treat:visits_age,
+                                                random=~ 1 + visits_age|ID,
+                                                # weights=varIdent(form=~1|exposure),
+                                                data = dat$longitudinal,
+                                                control = lmeControl(opt='optim', optimMethod='Nelder-Mead'))
+                                          })
+                               })
                     })
   
+  # fit_y <- tryCatch(suppressMessages(lme(value ~ 1 + visits_age + treat:visits_age,
+  #                                        random=~ 1 + visits_age|ID,
+  #                                        weights=varIdent(form=~1|exposure),
+  #                                        data = dat$longitudinal,
+  #                                        control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-8,
+  #                                                             msMaxEval=1000, niterEM = 50))),
+  #                   error=function(e){
+  #                     lme(value ~ 1 + visits_age + treat:visits_age,
+  #                         random=~ 1 + visits_age|ID,
+  #                         weights=varIdent(form=~1|exposure),
+  #                         data = dat$longitudinal,
+  #                         control = lmeControl(opt='optim'))
+  #                   })
   # sometimes this does not converge, use try in pipeline
   ################################
   # extract BLUPs and variance of random effects
@@ -92,12 +119,12 @@ fit_survival <- function(dat, model_complex, reffects.individual=NULL){
   }
   print('finish fitting survival data in two-stage')
   betas <- beta_vec_to_param(fit_t, model_complex)
-  print('initial betas_mu:') 
-  print(betas$beta_mu)
-  print('initial betas_sigma:') 
-  print(betas$beta_sigma)
-  print('initial betas_q:') 
-  print(betas$beta_q)
+  # print('initial betas_mu:') 
+  # print(betas$beta_mu)
+  # print('initial betas_sigma:') 
+  # print(betas$beta_sigma)
+  # print('initial betas_q:') 
+  # print(betas$beta_q)
   
   return(list(beta_mu=betas$beta_mu, beta_sigma=betas$beta_sigma, beta_q=betas$beta_q,
               beta_noreff = beta_vec_to_param(fit_t_no_reff, model_complex),

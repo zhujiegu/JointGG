@@ -1,10 +1,11 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 # the longitudinal 
-JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=1, model_complex, 
-                  GH_level, GH_level_I=15, refine_GH=F, full_adaptive=T){
+JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=100, Nr.cores=1, model_complex='normal', 
+                  GH_level=7, GH_level_I=15, refine_GH=T, full_adaptive=T, max_attp=10){
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
+  # initial nodes based on longitudinal data alone
   n_w_adj <- aGH_n_w(fit_y$reffects.individual, fit_y$var.reffects, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
   
   if(all(init_params=='two-stage')){
@@ -20,6 +21,68 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   }else{
     fit_t <- NULL
   }
+  
+  EM_results <- NULL
+  Nr_attp=0
+  while (is.null(EM_results) && Nr_attp < max_attp){
+    Nr_attp <- Nr_attp + 1
+    print('initial parameters:')
+    print(init_params)
+    EM_results <- tryCatch({
+      EM_body(dat, init_params, rel_tol, steps, Nr.cores, model_complex, 
+              GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj)
+    }, error = function(e) {
+      cat("Error occurred in attempt", Nr_attp, ":", e$message, "\n")
+      dat_sub <- dat_subset(dat, proportion=0.7)
+      fit_y_sub <- fit_longitudinal(dat_sub)
+      fit_t_sub <- fit_survival(dat_sub, model_complex, fit_y_sub$reffects.individual)
+      init_params <<- list(G=fit_y_sub$G,
+                           a0=fit_y_sub$a0,
+                           a1=fit_y_sub$a1,
+                           a2=fit_y_sub$a2,
+                           sig_e2=fit_y_sub$sig_e2,
+                           beta_mu=fit_t_sub$beta_mu,
+                           beta_sigma=fit_t_sub$beta_sigma,
+                           beta_q=fit_t_sub$beta_q)
+      
+      # if(Nr_attp < max_attp/2){
+      #   init_params <<- lapply(init_params, jitter)
+      # }else{ # usually convergence problem is caused by beta values that are too large
+      #   params_names <- names(params)
+      #   init_params <<- lapply(params_names, function(name) {
+      #     param <- params[[name]]
+      #     if(startsWith(name, 'beta')) {
+      #       param <- param / 5
+      #     }else{
+      #       param
+      #     }
+      #     return(param)
+      #   })
+      #   names(init_params) <<- params_names
+      # }
+      return(NULL)  # Return NULL to signal failure
+    })
+  }
+  
+  if(!is.null(EM_results)){
+    message(paste("EM successful after", Nr_attp, "attempts"))
+    message("Nr steps was ", EM_results$Nr_steps)
+    message("Log-likelihood: ", EM_results$logl_final)
+    EM_results$fit_y <- fit_y
+    EM_results$fit_t <- fit_t
+    EM_results$success <- T
+    class(EM_results) <- "JMGG"
+  }else{
+    message(paste("EM failed after", max_attp, "attempts"))
+    EM_results = list(dat=dat, params=init_params, model_complex=model_complex, 
+                      GH_level=GH_level, GH_level_I=GH_level_I, n_w_adj=n_w_adj, success=F)
+    class(EM_results) <- "JMGG_debug"
+  }
+  return(EM_results)
+}
+
+EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex, 
+                    GH_level, GH_level_I, refine_GH, full_adaptive, n_w_initial){
   params <- init_params
   logl <- c()
   ####################################
@@ -33,9 +96,11 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   
   tic <- proc.time()
   params_list <- list()
-  params_list[[1]] <- init_params  # intial parameter, corresponding to logl[1]
+  step_outp_list <- list()
+  params_list[[1]] <- init_params  # intial parameter [1] -> logl[1] -> step_outp_list[1]
   for(i in 1:steps){
-    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_initial,  model_complex)
+    step_outp_list[[i]] <- step_outp
     params = step_outp$params
     params_list[[i+1]] <- params
     ##################################
@@ -47,11 +112,10 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
     if(i > 1){
       if(logl[i]-logl[i-1] < 0) print(paste('log likelihood decreased', logl[i-1]-logl[i], 'in step',i))
       if(logl[1]<0 && logl[i] < 2*logl[1]){
-        print('EM algorithm may have diverged')
-        refine_GH <- FALSE
-        break
+        error('EM algorithm may have diverged')
       }
       if(abs(logl[i]-max(logl[1:(i-1)])) < rel_tol*abs(logl[2]-logl[1])) break
+      if(abs(logl[i]-logl[i-1]) < rel_tol*abs(logl[2]-logl[1])) break
     }
     if(i %in% c(2, seq(10, 1e6, by=10))){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
@@ -59,6 +123,9 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
   }
   # use the best parameters in the first stage
   params <- params_list[[which.max(logl)]] #note the i-th logl corresponds to the i-1 th params 
+  step_outp <- step_outp_list[[which.max(logl)]]
+  logl_final <- max(logl)
+  
   print(paste('Stage I of EM complete, Nr. step =', i))
   
   if(refine_GH){
@@ -77,6 +144,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
         n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
       }
       step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+      step_outp_list[[i+j]] <- step_outp
       params = step_outp$params
       params_list[[i+j+1]] <- params
       ##################################
@@ -93,6 +161,8 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
           break
         }
         if(abs(logl[i+j]-max(logl[(i+1):(i+j-1)])) < rel_tol*abs(logl[2]-logl[1])) break
+        if(abs(logl[i+j]-logl[i+j-1]) < rel_tol*abs(logl[2]-logl[1])) break
+        
         if((i+j) %in% c(2, seq(10, 1e6, by=10))){
           print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
         }
@@ -100,54 +170,37 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=5, Nr.cores=
     }
     # conclude with the best params in the second stage
     params <- params_list[[which.max(logl[-(1:i)]) + i]]
+    step_outp <- step_outp_list[[which.max(logl[-(1:i)]) + i]]
+    logl_final <- max(logl[-(1:i)])
+    
   }else{
     j=0
   }
-  # update BLUPs and nodes for information matrix
-  print(paste('Updating GH nodes'))
-  n_w_adj_I <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level_I, dat, plot_nodes=F)
-  
-  # # stage one, 0.9* steps, 10* tol, using pseudo-adaptive GH
-  # for(i in 1:floor(0.9*steps)){
-  #   step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
-  #   params = step_outp$params
-  # 
-  #   ##################################
-  #   # # testing
-  #   # params_list[[i]] <- params
-  #   ##################################
-  # 
-  #   logl[i] = step_outp$likl_log
-  # 
-  #   if(i > 1){
-  #     if(logl[i]-logl[i-1] < 0) print(paste('Decrease in log likelihood in step',i))
-  #     if(abs(logl[i]-logl[i-1]) < 10*tol) break
-  #   }
-  #   if(i %in% c(2, 1e1, 1e2, 1e3, 5e3, 1e4, 4e4)){
-  #     print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
-  #   }
-  # }
   
   print('EM finished, starting computing observed information matrix')
-  list_com <- aGH_common(params=params, n_w_adj=n_w_adj_I, dat=dat, model_complex, Nr.cores)
-  # likelihood of each sample
-  list_likl <- lapply(list_com, function(e){
-    return(sum(e))
-  })
-  # Observed information matrix
-  I_beta <-aGH_I_beta(Nr.cores, dat_perID_t, params, list_com, n_w_adj_I, list_likl,model_complex)
-  I_beta <- beta_hes_transform(I_beta, model_complex, 'expand')
+  I_beta <- NULL
+  I_beta_attp <- 0
+  while (is.null(I_beta) && I_beta_attp < 3) {
+    I_beta_attp <- I_beta_attp + 1
+    n_w_adj_I <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level_I, 
+                         dat, plot_nodes=F)
+    I_beta <- tryCatch({
+      compute_betaI(dat, dat_perID_t, params, n_w_adj_I, model_complex, Nr.cores)
+    }, error = function(e) {
+      cat("Error occurred in attempt", I_beta_attp, ":", e$message, "\n")
+      GH_level_I <<- GH_level_I+3
+      return(NULL)  # Return NULL to signal failure
+    })
+  }
   
-  # message("Nr steps was ", i)
-  # message("Log-likelihood: ", logl[i])
-  message("Nr steps was ", i+j)
-  message("Log-likelihood: ", logl[i+j])
-  outputt <- list(params = params, I_beta = I_beta, E_b=step_outp$E_b, logl = logl, model_complex=model_complex, 
-                  GH_level=GH_level, fit_y=fit_y, fit_t=fit_t) #, debug = debug_list)
-  class(outputt) <- "JMGG"
-  return(outputt)
+  if(is.null(I_beta)) stop('computation of I_beta failed')
+  # output
+  EM_results <- list(params = params, I_beta = I_beta, E_b=step_outp$E_b, logl = logl,model_complex=model_complex,
+                     
+                     GH_level=GH_level, GH_level_I=GH_level_I, Nr_steps=i+j, logl_final=logl_final)
 }
 
+# One iteration of EM
 EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
   
   # Numerical integration of the common part and store the results (all sample combined)
@@ -238,6 +291,31 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   outp <- list(params = params, likl_log=likl_log, E_b=df_E_b, E_b_list=E_b, E_bb_list=E_bb, E_bb_var=E_bb_var)
   return(outp)
 }
+
+dat_subset <- function(dat, proportion=0.7){
+  n = dat$survival %>% nrow
+  n_sub <- ceiling(n*proportion)
+  IDs <- dat$survival$ID
+  IDs_sub <- sample(IDs, n_sub)
+  dat_y <- dat$longitudinal %>% filter(ID %in% IDs_sub)
+  dat_t <- dat$survival %>% filter(ID %in% IDs_sub)
+  return(list(longitudinal=dat_y, survival=dat_t))
+}
+
+# compute information matrix for beta
+compute_betaI <- function(dat, dat_perID_t, params, n_w_adj_I, model_complex, Nr.cores){
+  list_com <- aGH_common(params=params, n_w_adj=n_w_adj_I, dat=dat, model_complex, Nr.cores)
+  # likelihood of each sample
+  list_likl <- lapply(list_com, function(e){
+    return(sum(e))
+  })
+  # Observed information matrix
+  I_beta <- aGH_I_beta(Nr.cores, dat_perID_t, params, list_com, n_w_adj_I, list_likl,model_complex)
+  I_beta %>% ginv # test if it's invertible
+  I_beta <- beta_hes_transform(I_beta, model_complex, 'expand')
+  return(I_beta)
+}
+
 
 
 params_generate <- function(method = c("random", "specify", "method3"),params_specify=NULL){
