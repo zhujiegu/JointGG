@@ -65,7 +65,8 @@ fit_longitudinal <- function(dat){
     a1=fit_y$coefficients$fixed[2],
     a2=fit_y$coefficients$fixed[3],
     sig_e2=(fit_y$sigma)^2,
-    G=Reduce('+', var.reffects)/n,
+    # G=Reduce('+', var.reffects)/n,
+    G=unclass(getVarCov(fit_y)),
     reffects.individual=reffects.individual,
     var.reffects=var.reffects
   ))
@@ -86,12 +87,12 @@ fit_survival <- function(dat, model_complex, reffects.individual=NULL){
     fit_t_no_reff_tmp <- optim_trycatch(initial_vec=rep(0,5), dat, model_complex, reffects.individual, rm_reff=T)
     fit_t_no_reff<- c(fit_t_no_reff_tmp$par[1:2],0,0, fit_t_no_reff_tmp$par[3:5])
     # Start optimization with random effects
-    fit_t <- optim_trycatch(fit_t_no_reff, dat, model_complex, reffects.individual, rm_reff=F)
-    if (!is.null(fit_t$convergence) && fit_t$convergence == 0) {
-      fit_t <- fit_t$par
-    } else {
-      fit_t <- fit_t_no_reff
-    }
+    fit_t <- optim_trycatch(fit_t_no_reff, dat, model_complex, reffects.individual, rm_reff=F)$par
+    # if (!is.null(fit_t$convergence) && fit_t$convergence == 0) {
+    #   fit_t <- fit_t$par
+    # } else {
+    #   fit_t <- fit_t_no_reff
+    # }
   }
   if(model_complex=='GG'){
     # Initialize parameters
@@ -386,21 +387,16 @@ beta_hes_transform <- function(hes, model_complex, type=c('collapse', 'expand'))
 
 # try L-BFGS-B, Nelder-Mead, SANN consecutively
 optim_trycatch <- function(initial_vec, dat, model_complex, reffects.individual, rm_reff){
-  fit_t <- tryCatch({
-    optim(initial_vec, fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff), 
-          gr = function(vec) ll_grt_t(vec, dat, model_complex, reffects.individual, rm_reff),  
-          method = 'L-BFGS-B', hessian = T)
-  }, error = function(e) {
-    tryCatch({
-      optim(initial_vec, 
-            fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
-            method = 'Nelder-Mead', hessian = TRUE)
-    }, error = function(e2) {
-      optim(initial_vec,
-            fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
-            method = 'SANN', hessian = TRUE)
-    })
+  fit_t <-  tryCatch({
+    optim(initial_vec, 
+          fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
+          method = 'Nelder-Mead', hessian = TRUE)
+  }, error = function(e2) {
+    optim(initial_vec,
+          fn = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
+          method = 'SANN', hessian = TRUE)
   })
+  
   # replace the hessian
   fit_t$hessian <- hessian(func = function(vec) ll_t(vec, dat, model_complex, reffects.individual, rm_reff),
                            x = fit_t$par)

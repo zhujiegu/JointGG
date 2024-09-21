@@ -1,6 +1,5 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
-# the longitudinal 
-JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=100, Nr.cores=1, model_complex='normal', 
+JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', 
                   GH_level=7, GH_level_I=15, refine_GH=T, full_adaptive=T, max_attp=10){
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
@@ -29,26 +28,35 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=100, Nr.core
     print('initial parameters:')
     print(init_params)
     EM_results <- tryCatch({
-      EM_body(dat, init_params, rel_tol, steps, Nr.cores, model_complex, 
+      EM_body(dat, init_params, rel_tol, tol, steps, Nr.cores, model_complex, 
               GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj)
     }, error = function(e) {
       cat("Error occurred in attempt", Nr_attp, ":", e$message, "\n")
       dat_sub <- dat_subset(dat, proportion=0.7)
       fit_y_sub <- fit_longitudinal(dat_sub)
       fit_t_sub <- fit_survival(dat_sub, model_complex, fit_y_sub$reffects.individual)
-      init_params <<- list(G=fit_y_sub$G,
-                           a0=fit_y_sub$a0,
-                           a1=fit_y_sub$a1,
-                           a2=fit_y_sub$a2,
-                           sig_e2=fit_y_sub$sig_e2,
-                           beta_mu=fit_t_sub$beta_mu,
-                           beta_sigma=fit_t_sub$beta_sigma,
-                           beta_q=fit_t_sub$beta_q)
-      
-      # if(Nr_attp < max_attp/2){
-      #   init_params <<- lapply(init_params, jitter)
-      # }else{ # usually convergence problem is caused by beta values that are too large
-      #   params_names <- names(params)
+      if(Nr_attp <= max_attp/2){
+        init_params <<- list(G=fit_y_sub$G,
+                             a0=fit_y_sub$a0,
+                             a1=fit_y_sub$a1,
+                             a2=fit_y_sub$a2,
+                             sig_e2=fit_y_sub$sig_e2,
+                             beta_mu=fit_t_sub$beta_mu,
+                             beta_sigma=fit_t_sub$beta_sigma,
+                             beta_q=fit_t_sub$beta_q)
+      }else{
+        # usually convergence problem is caused by beta values that are too large
+        init_params <<- list(G=fit_y_sub$G,
+                             a0=fit_y_sub$a0,
+                             a1=fit_y_sub$a1,
+                             a2=fit_y_sub$a2,
+                             sig_e2=fit_y_sub$sig_e2,
+                             beta_mu=fit_t_sub$beta_mu/10,
+                             beta_sigma=fit_t_sub$beta_sigma/10,
+                             beta_q=fit_t_sub$beta_q/10)
+      }
+      # if(Nr_attp > max_attp/2){
+      #   params_names <- names(init_params)
       #   init_params <<- lapply(params_names, function(name) {
       #     param <- params[[name]]
       #     if(startsWith(name, 'beta')) {
@@ -81,7 +89,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-7, steps=100, Nr.core
   return(EM_results)
 }
 
-EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex, 
+EM_body <- function(dat, init_params, rel_tol,tol, steps, Nr.cores, model_complex, 
                     GH_level, GH_level_I, refine_GH, full_adaptive, n_w_initial){
   params <- init_params
   logl <- c()
@@ -98,11 +106,14 @@ EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex,
   params_list <- list()
   step_outp_list <- list()
   params_list[[1]] <- init_params  # intial parameter [1] -> logl[1] -> step_outp_list[1]
+  Nr_beta_grt_err = 0
   for(i in 1:steps){
-    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_initial,  model_complex)
+    step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_initial,  model_complex,
+                        Nr_beta_grt_err)
     step_outp_list[[i]] <- step_outp
     params = step_outp$params
     params_list[[i+1]] <- params
+    Nr_beta_grt_err = step_outp$Nr_beta_grt_err
     ##################################
     # # testing
     # params_list[[i]] <- params
@@ -114,8 +125,9 @@ EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex,
       if(logl[1]<0 && logl[i] < 2*logl[1]){
         error('EM algorithm may have diverged')
       }
-      if(abs(logl[i]-max(logl[1:(i-1)])) < rel_tol*abs(logl[2]-logl[1])) break
-      if(abs(logl[i]-logl[i-1]) < rel_tol*abs(logl[2]-logl[1])) break
+      tol_value <- max(rel_tol*abs(logl[2]-logl[1]), tol)
+      if(abs(logl[i]-max(logl[1:(i-1)])) < tol_value) break
+      if(abs(logl[i]-logl[i-1]) < tol_value) break
     }
     if(i %in% c(2, seq(10, 1e6, by=10))){
       print(data.frame(row.names = 1, steps = i, time = unname(proc.time()-tic)[3], diff = logl[i]-logl[i-1], logl = logl[i]))
@@ -143,10 +155,11 @@ EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex,
         # update node every step
         n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
       }
-      step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex)
+      step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex, Nr_beta_grt_err)
       step_outp_list[[i+j]] <- step_outp
       params = step_outp$params
       params_list[[i+j+1]] <- params
+      Nr_beta_grt_err = step_outp$Nr_beta_grt_err
       ##################################
       # # testing
       # params_list[[j]] <- params
@@ -160,8 +173,8 @@ EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex,
           print('EM algorithm may have diverged')
           break
         }
-        if(abs(logl[i+j]-max(logl[(i+1):(i+j-1)])) < rel_tol*abs(logl[2]-logl[1])) break
-        if(abs(logl[i+j]-logl[i+j-1]) < rel_tol*abs(logl[2]-logl[1])) break
+        if(abs(logl[i+j]-max(logl[(i+1):(i+j-1)])) < tol_value) break
+        if(abs(logl[i+j]-logl[i+j-1]) < tol_value) break
         
         if((i+j) %in% c(2, seq(10, 1e6, by=10))){
           print(data.frame(row.names = 1, steps = i+j, time = unname(proc.time()-tic)[3], diff = logl[i+j]-logl[i+j-1], logl = logl[i+j]))
@@ -196,12 +209,13 @@ EM_body <- function(dat, init_params, rel_tol, steps, Nr.cores, model_complex,
   if(is.null(I_beta)) stop('computation of I_beta failed')
   # output
   EM_results <- list(params = params, I_beta = I_beta, E_b=step_outp$E_b, logl = logl,model_complex=model_complex,
-                     
-                     GH_level=GH_level, GH_level_I=GH_level_I, Nr_steps=i+j, logl_final=logl_final)
+                     GH_level=GH_level, GH_level_I=GH_level_I, Nr_steps=i+j, logl_final=logl_final, 
+                     params_list=params_list)
 }
 
 # One iteration of EM
-EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal')){
+EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal'), 
+                    Nr_beta_grt_err){
   
   # Numerical integration of the common part and store the results (all sample combined)
   list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
@@ -227,6 +241,13 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
                        list_com, n_w_adj, list_likl,model_complex)
   # Gradients
   Q_grt_beta <- aGH_Q_grt_beta(Nr.cores=Nr.cores, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+  if(all(Q_grt_beta==0)){
+    Nr_beta_grt_err = Nr_beta_grt_err+1
+    if(Nr_beta_grt_err>3) stop('gradient of beta is zero in consecutive EM steps')
+  }else{
+    Nr_beta_grt_err = 0
+  }
+  
   Q_beta_new <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
                            update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
   k=1 # number of search of s, to prevent infinite loop here
@@ -288,7 +309,8 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   params$sig_e2 <- update_y$sig_e2/N
   params$G <- Reduce('+', E_bb)/n
   
-  outp <- list(params = params, likl_log=likl_log, E_b=df_E_b, E_b_list=E_b, E_bb_list=E_bb, E_bb_var=E_bb_var)
+  outp <- list(params = params, likl_log=likl_log, E_b=df_E_b, E_b_list=E_b, E_bb_list=E_bb, E_bb_var=E_bb_var, 
+               Nr_beta_grt_err=Nr_beta_grt_err)
   return(outp)
 }
 
