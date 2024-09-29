@@ -35,7 +35,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=10
       dat_sub <- dat_subset(dat, proportion=0.7)
       fit_y_sub <- fit_longitudinal(dat_sub)
       fit_t_sub <- fit_survival(dat_sub, model_complex, fit_y_sub$reffects.individual)
-      if(Nr_attp <= max_attp/2){
+      if(Nr_attp < max_attp/2){
         init_params <<- list(G=fit_y_sub$G,
                              a0=fit_y_sub$a0,
                              a1=fit_y_sub$a1,

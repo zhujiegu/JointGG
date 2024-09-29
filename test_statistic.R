@@ -150,7 +150,7 @@ z_statistic <- function(model_fit, up_limit, GH_level_z, true_param=F){
 }
 
 # model_fit is the output from JM (piecewise-PH, one knot)
-z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
+z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2, vars=F){
   
   b_dim = ncol(model_fit$coefficients$D)
   
@@ -189,13 +189,17 @@ z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
     RMST <- RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2)
     ######################
     # gradient
-    RMST_grt <- c(grad(function(x) RMST_CoxJM_piecewise(a0 = x,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a0),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1 = x,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a1),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2 = x,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a2),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam = x,alp,xi1,xi2, r, treat, up_limit, knot=2), gam),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
+    if(vars){
+      RMST_grt <- c(grad(function(x) RMST_CoxJM_piecewise(a0 = x,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a0),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1 = x,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a1),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2 = x,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a2),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam = x,alp,xi1,xi2, r, treat, up_limit, knot=2), gam),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
+    }else{
+      RMST_grt <- NULL
+    }
     
     #############
     # combine
@@ -212,39 +216,44 @@ z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2){
     RMST <- RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2)
     ######################
     # gradient
-    RMST_grt <- c(grad(function(x) RMST_CoxJM_piecewise(a0 = x,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a0),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1 = x,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a1),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2 = x,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a2),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam = x,alp,xi1,xi2, r, treat, up_limit, knot=2), gam),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
-                  grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
-    
+    if(vars){
+      RMST_grt <- c(grad(function(x) RMST_CoxJM_piecewise(a0 = x,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a0),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1 = x,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a1),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2 = x,gam,alp,xi1,xi2, r, treat, up_limit, knot=2), a2),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam = x,alp,xi1,xi2, r, treat, up_limit, knot=2), gam),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp = x,xi1,xi2, r, treat, up_limit, knot=2), alp),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1 = x,xi2, r, treat, up_limit, knot=2), xi1),
+                    grad(function(x) RMST_CoxJM_piecewise(a0,a1,a2,gam,alp,xi1,xi2 = x, r, treat, up_limit, knot=2), xi2))
+    }else{
+      RMST_grt <- NULL
+    }    
     #############
     # combine
     return(list(RMST = RMST, RMST_grt = RMST_grt))
   })
   
   RMST_treat_l <- sapply(treat_list, function(e) e$RMST)
-  grt_treat_l <- lapply(treat_list, function(e) e$RMST_grt)
   RMST_control_l <- sapply(control_list, function(e) e$RMST)
-  grt_control_l <- lapply(control_list, function(e) e$RMST_grt)
-  
   RMST_treat <- sum(RMST_treat_l * GH_nodes$w)
   RMST_control <- sum(RMST_control_l * GH_nodes$w)
-  grt_treat <- Reduce('+', Map('*', grt_treat_l, GH_nodes$w))
-  grt_control <- Reduce('+', Map('*', grt_control_l, GH_nodes$w))
-  
   delta_RMST = RMST_treat - RMST_control
-  delta_RMST_grt =grt_treat-grt_control
   
-  I_params <- model_fit$Hessian[c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2'),
-                                c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2')]
-  
-  var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
-                            ginv(I_params) %*%
-                            matrix(delta_RMST_grt, ncol = 1))
-  
+  if(vars){
+    grt_treat_l <- lapply(treat_list, function(e) e$RMST_grt)
+    grt_control_l <- lapply(control_list, function(e) e$RMST_grt)
+    grt_treat <- Reduce('+', Map('*', grt_treat_l, GH_nodes$w))
+    grt_control <- Reduce('+', Map('*', grt_control_l, GH_nodes$w))
+    delta_RMST_grt =grt_treat-grt_control
+    
+    I_params <- model_fit$Hessian[c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2'),
+                                  c('Y.(Intercept)','Y.visits_age','Y.visits_age:treat','T.treat','T.alpha','T.xi.1','T.xi.2')]
+    
+    var_delta <- as.numeric(matrix(delta_RMST_grt, nrow = 1) %*% 
+                              ginv(I_params) %*%
+                              matrix(delta_RMST_grt, ncol = 1))
+  }else{
+    var_delta <- NULL
+  }
   return(list(delta_RMST = delta_RMST, var_delta_RMST=var_delta))  
 }
 
@@ -451,6 +460,47 @@ get_RMST_var_GG <- function(model_fit, up_limit){
               RMST_contl=RMST_contl, var_RMST_treat=var_RMST_treat, var_RMST_contl=var_RMST_contl))
 }
 
+# get delta RMST in other comparing methods
+get_RMST_others <- function(dat, t_max){
+  ######################
+  # Cox Weibull
+  fit_parametric <- flexsurvreg(Surv(times, status) ~ treat, data = dat$survival, dist = "weibull")
+  RMST_delta_Cox <- (predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=1))-
+                       predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=0)))$.pred_rmst
+  
+  ######################
+  # GG
+  fit_GG <- optim_trycatch(initial_vec=rep(0,5), dat, 'normal', reffects.individual=NULL, rm_reff=T)$par
+  RMST_delta_GG <- mean_t(mu = fit_GG[1]+fit_GG[2], sigma = fit_GG[3]+fit_GG[4], q = fit_GG[5], t_max) - 
+    mean_t(mu = fit_GG[1], sigma = fit_GG[3], q = fit_GG[5], t_max)
+  
+  ######################
+  # JM Cox piecewise-constant
+  extract_numeric_id <- function(id){
+    as.numeric(gsub("ID", "", id))
+  }
+  dat$longitudinal$ID <- extract_numeric_id(dat$longitudinal$ID)
+  dat$survival$ID <- extract_numeric_id(dat$survival$ID)
+  # dat_joint <- merge(dat$interim1$longitudinal, dat$interim1$survival) %>% arrange(ID)
+  # dat_unique <- dat_joint %>% group_by(ID) %>% head(1)
+  
+  fitLME <- lme(value ~ 1 + visits_age + treat:visits_age,  
+                random=~ 1 + visits_age|ID,
+                data = dat$longitudinal,
+                control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-5,
+                                     msMaxEval=1000, niterEM = 50))
+  
+  fitCOX <- coxph(Surv(times, status) ~ treat, data = dat$survival, x = TRUE) # joint model fit with a spline-approximated baseline hazard function 
+  
+  # notice here we use one knot at t=0.5
+  fitJOINT <- jointModel(fitLME, fitCOX, timeVar = "visits_age", method='piecewise-PH-GH', 
+                         control = list(knots=c(0.5)))
+  
+  RMST_delta_JMCox <- tryCatch({z_statistic_Cox(fitJOINT, up_limit = t_max, GH_level_z = 15, knot = 0.5, vars=F)$delta_RMST},
+                               error=function(e) return(NA))
+  return(c(Cox=RMST_delta_Cox, GG=RMST_delta_GG, JMCox=RMST_delta_JMCox))
+}
+
 
 RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2){
   # random effects
@@ -472,7 +522,25 @@ RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, k
     H_values <- sapply(t, calculate_H)
     return(exp(-H_values))
   }
-  RMST <- integrate(f = S_CoxJM_piecewise, lower = 0, upper = up_limit)
+  error_occurred <- TRUE
+  ever <- FALSE
+  while (error_occurred){
+    tryCatch(
+      {
+        RMST <- integrate(f = S_CoxJM_piecewise, lower = 0, upper = up_limit)
+        # If no error occurs, set the flag to FALSE to exit the loop
+        error_occurred <- FALSE
+      },
+      error = function(e) {
+        # error may occur when stretch of 0 present, decrease up_limit and continue the loop
+        up_limit <<- 0.8 * up_limit
+        ever <<- TRUE
+      }
+    )
+  }
+  print(up_limit)
+  if(ever) warning('Upper limit reduced during integration. Results may not be accurate.')
+  
   return(RMST$value)
 }
 

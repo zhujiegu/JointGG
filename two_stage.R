@@ -106,14 +106,7 @@ fit_survival <- function(dat, model_complex, reffects.individual=NULL){
     # browser()
     fit_t_no_reff_tmp <- optim_trycatch(initial_vec=rep(0,4), dat, model_complex, reffects.individual, rm_reff=T)
     fit_t_no_reff<- c(fit_t_no_reff_tmp$par[1:2],0,0, fit_t_no_reff_tmp$par[3:4])
-    # Start optimization with error handling
-    # Start optimization with random effects
-    fit_t <- optim_trycatch(fit_t_no_reff, dat, model_complex, reffects.individual, rm_reff=F)
-    if (!is.null(fit_t$convergence) && fit_t$convergence == 0) {
-      fit_t <- fit_t$par
-    } else {
-      fit_t <- fit_t_no_reff
-    }
+    fit_t <- optim_trycatch(fit_t_no_reff, dat, model_complex, reffects.individual, rm_reff=F)$par
   }
   if(model_complex=='saturated'){
     stop('two-step to be completed')
@@ -135,7 +128,7 @@ fit_survival <- function(dat, model_complex, reffects.individual=NULL){
 
 
 ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
-  if(is.null(reffects.individual)){
+  if(!rm_reff & is.null(reffects.individual)){
     rm_reff=T
     warning('random effects are not supplied, using 0 instead')
   }
@@ -185,7 +178,7 @@ ll_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F)
 }
 
 ll_grt_t <- function(params_vec, dat, model_complex, reffects.individual, rm_reff=F){
-  if(is.null(reffects.individual)){
+  if(!rm_reff & is.null(reffects.individual)){
     rm_reff=T
     warning('random effects are not supplied, using 0 instead')
   }

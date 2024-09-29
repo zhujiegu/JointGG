@@ -95,7 +95,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
 
 
 simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
-                        G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q){
+                        G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q, cens_interval=NULL){
   set.seed(seed)
   b_dim=nrow(G)
   #################
@@ -127,6 +127,15 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   
   # generate start (entering) and end time (calendar time)
   dat_t %<>% mutate(start = sort(runif(n, 0, recruitment_time))) %>% mutate(end = start+surv_t)
+  
+  if(!is.null(cens_interval)){
+    cens_time <- runif(n, cens_interval[1], cens_interval[2])
+    # event indicator
+    dat_t %<>% mutate(cens_time=cens_time) %>% 
+      rowwise %>% mutate(times=min(surv_t,cens_time)) %>% ungroup
+  }else{
+    dat_t %<>% mutate(cens_time=Inf)
+  }
   
   ##############################
   # Data for interim analysis 
@@ -164,8 +173,8 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
 
 generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2, visits_age){
   dat_t %<>% filter(start<=interim_time)
-  dat_t %<>% mutate(status=ifelse(end<interim_time, 1, 0), cens_t=interim_time) %>% 
-    rowwise %>% mutate(times=min(surv_t,cens_t-start)) %>% ungroup
+  dat_t %<>% rowwise %>% mutate(status=ifelse(end<min(interim_time, cens_time), 1, 0), cens_t=min(interim_time, cens_time)) %>% 
+    mutate(times=min(surv_t,cens_t-start)) %>% ungroup
   # Longitudinal process  
   dat_y <- tibble(dat_t %>% select(ID:b1, start, end, cens_t), exposure='SBP')
   dat_y %<>% cross_join(tibble(visits_age)) %>% mutate(visits_time = visits_age+start)
@@ -177,3 +186,25 @@ generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2,
   dat_t %<>% select(ID, treat, status, times)
   return(list(longitudinal=dat_y, survival=dat_t))
 }
+
+
+# bootstrap
+generate_dat_bootstrap <- function(dat, seed){
+  set.seed(seed)
+  # creating the bootstrap data
+  IDs <- dat$survival$ID
+  n=length(IDs)
+  IDs_bootstr <- sample(IDs, size = n, replace = T)
+  
+  dat_t <- lapply(IDs_bootstr, function(i) dat$survival %>% filter(ID==i))
+  dat_y <- lapply(IDs_bootstr, function(i) dat$longitudinal %>% filter(ID==i))
+  for (i in 1:n){
+    dat_t[[i]]$ID <- paste0('ID', i)
+    dat_y[[i]]$ID <- paste0('ID', i)
+  }
+  dat_t <- do.call(rbind, dat_t)
+  dat_y <- do.call(rbind, dat_y)
+  dat = list(survival=dat_t, longitudinal=dat_y)
+  return(dat)
+}
+
