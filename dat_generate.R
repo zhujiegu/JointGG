@@ -140,7 +140,7 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   ##############################
   # Data for interim analysis 
   ##############################
-  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, dat_y, k, a0, a1, a2, sig_e2, visits_age))
+  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, k, a0, a1, a2, sig_e2, visits_age))
   names(dat) <- c(paste0('interim', 1:length(interim_times)))
   
   dat$true_b <- dat_t %>% select(ID,b0,b1)
@@ -171,7 +171,7 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   return(dat)
 }
 
-generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2, visits_age){
+generate_dat_interim <- function(dat_t, interim_time, a0, a1, a2, sig_e2, visits_age){
   dat_t %<>% filter(start<=interim_time)
   dat_t %<>% rowwise %>% mutate(status=ifelse(end<min(interim_time, cens_time), 1, 0), cens_t=min(interim_time, cens_time)) %>% 
     mutate(times=min(surv_t,cens_t-start)) %>% ungroup
@@ -187,9 +187,97 @@ generate_dat_interim <- function(dat_t, dat_y, interim_time, a0, a1, a2, sig_e2,
   return(list(longitudinal=dat_y, survival=dat_t))
 }
 
+# generate data from Joint model with Cox Weibull baseline
+generate_dat_CoxWeibull <- function(n, seed, visits_age, recruitment_time, interim_times, G, a0, a1, a2, sig_e2, 
+                                    shape, scale, association_y, association_fix, cens_interval=NULL){
+  set.seed(seed)
+  b_dim=nrow(G)
+  #################
+  # Treatment assign
+  #################
+  x_i = rbinom(n,1,0.5)
+  
+  #################
+  # Random effects
+  #################
+  b <- mvrnorm(n, rep(0,b_dim), G)
+  colnames(b) <- c('b0','b1')
+  #################
+  # data matrix
+  dat_t <- tibble(ID=paste0('ID',1:n),treat=x_i) %>%
+    bind_cols(as_tibble(b))
+  ###################
+  # Survival process
+  ###################
+  u <- runif(n)
+  
+  invS <- function(t,u,i,...){
+    h <- function(s,...){
+      XX <- cbind(s,s*x_i[i])
+      ZZ <- cbind(1,s)
+      fval <- as.vector(XX%*%c(a1,a2) + rowSums(ZZ*b[rep(i,nrow(ZZ)),]))
+      hh <- exp(log(scale)+log(shape)+(shape-1)*log(s)+association_fix*x_i[i]+association_y*fval)
+      return(hh)
+    }
+    return(integrate(h,lower=0,upper=t)$value + log(u))
+  }
+  
+  trueTime <- NULL
+  for(i in 1:n){
+    Up <- 50
+    tries <- 5
+    Root <- try(uniroot(invS,interval=c(1e-05,Up),u=u[i],i=i)$root,TRUE)
+    while(inherits(Root,"try-error") && tries>0){
+      tries <- tries - 1 
+      Up <- Up + 50
+      Root <- try(uniroot(invS,interval=c(1e-05,Up),u=u[i],i=i)$root,TRUE)	
+    }
+    trueTime[i] <- ifelse(!inherits(Root,"try-error"), Root, NA)	
+  }
+  
+  # True time, censoring, observed time and event indicator
+  trueTime <- ifelse(is.na(trueTime),interim_times[length(interim_times)],trueTime)
+  
+  # mutate survival time
+  dat_t %<>% mutate(surv_t = trueTime)
+  
+  # generate start (entering) and end time (calendar time)
+  dat_t %<>% mutate(start = sort(runif(n, 0, recruitment_time))) %>% mutate(end = start+surv_t)
+  
+  if(!is.null(cens_interval)){
+    cens_time <- runif(n, cens_interval[1], cens_interval[2])
+    # event indicator
+    dat_t %<>% mutate(cens_time=cens_time) %>% 
+      rowwise %>% mutate(times=min(surv_t,cens_time)) %>% ungroup
+  }else{
+    dat_t %<>% mutate(cens_time=Inf)
+  }
+  
+  ##############################
+  # Data for interim analysis 
+  ##############################
+  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, k, a0, a1, a2, sig_e2, visits_age))
+  names(dat) <- c(paste0('interim', 1:length(interim_times)))
+  
+  dat$true_b <- dat_t %>% select(ID,b0,b1)
+  
+  params_true <- list(
+    G=G,
+    a0=a0,
+    a1=a1,
+    a2=a2,
+    sig_e2=sig_e2,
+    shape=shape, 
+    scale=scale, 
+    association_y=association_y, 
+    association_fix=association_fix
+  )
+  dat$params <- params_true
+  return(dat)
+}
 
 # bootstrap
-generate_dat_bootstrap <- function(dat, seed){
+generate_dat_bootstrap <- function(dat, seed, return.ID=F){
   set.seed(seed)
   # creating the bootstrap data
   IDs <- dat$survival$ID
@@ -205,6 +293,10 @@ generate_dat_bootstrap <- function(dat, seed){
   dat_t <- do.call(rbind, dat_t)
   dat_y <- do.call(rbind, dat_y)
   dat = list(survival=dat_t, longitudinal=dat_y)
-  return(dat)
+  if(return.ID){
+    return(list(dat=dat, IDs=IDs_bootstr))
+  }else{
+    return(dat)
+  }
 }
 
