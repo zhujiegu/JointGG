@@ -467,13 +467,13 @@ get_RMST_others <- function(dat, t_max){
   fit_parametric <- flexsurvreg(Surv(times, status) ~ treat, data = dat$survival, dist = "weibull")
   RMST_delta_Cox <- (predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=1))-
                        predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=0)))$.pred_rmst
-  
+  # print('Cox finished')
   ######################
   # GG
   fit_GG <- optim_trycatch(initial_vec=rep(0,5), dat, 'normal', reffects.individual=NULL, rm_reff=T)$par
-  RMST_delta_GG <- mean_t(mu = fit_GG[1]+fit_GG[2], sigma = fit_GG[3]+fit_GG[4], q = fit_GG[5], t_max) - 
-    mean_t(mu = fit_GG[1], sigma = fit_GG[3], q = fit_GG[5], t_max)
-  
+  RMST_delta_GG <- mean_t(mu = fit_GG[1]+fit_GG[2], sigma = exp(fit_GG[3]+fit_GG[4]), q = exp(fit_GG[5]), t_max) - 
+    mean_t(mu = fit_GG[1], sigma = exp(fit_GG[3]), q = exp(fit_GG[5]), t_max)
+  # print('GG finished')
   ######################
   # JM Cox piecewise-constant
   extract_numeric_id <- function(id){
@@ -522,23 +522,25 @@ RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, k
     H_values <- sapply(t, calculate_H)
     return(exp(-H_values))
   }
+  
   error_occurred <- TRUE
   ever <- FALSE
-  while (error_occurred){
+  Nr_try <- 0
+  while (error_occurred & (Nr_try < 20)){
+    Nr_try = Nr_try + 1
     tryCatch(
       {
         RMST <- integrate(f = S_CoxJM_piecewise, lower = 0, upper = up_limit)
         # If no error occurs, set the flag to FALSE to exit the loop
         error_occurred <- FALSE
       },
-      error = function(e) {
+      error = function(e){
         # error may occur when stretch of 0 present, decrease up_limit and continue the loop
         up_limit <<- 0.8 * up_limit
         ever <<- TRUE
       }
     )
   }
-  print(up_limit)
   if(ever) warning('Upper limit reduced during integration. Results may not be accurate.')
   
   return(RMST$value)
@@ -547,7 +549,9 @@ RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, k
 mean_t <- function(mu, sigma, q, up_limit){
   error_occurred <- TRUE
   ever <- FALSE
-  while (error_occurred){
+  Nr_try <- 0
+  while (error_occurred & (Nr_try < 20)){
+    Nr_try = Nr_try + 1
     tryCatch(
       {
         t <- integrate(f = function(x) pgengamma(x,mu,sigma,q, lower.tail = F), lower = 0, upper = up_limit)
@@ -562,5 +566,6 @@ mean_t <- function(mu, sigma, q, up_limit){
     )
   }
   if(ever) warning('Upper limit reduced during integration. Results may not be accurate.')
+  if(error_occurred) stop("Integration of Survival curve error, check funciton 'mean_t'")
   return(t$value)
 }
