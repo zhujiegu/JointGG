@@ -149,13 +149,66 @@ z_statistic <- function(model_fit, up_limit, GH_level_z, true_param=F){
   }
 }
 
+# Computing RMST for JM with Cox surival (Weibull baseline hazard)
+z_statistic_Cox_Weibull <- function(G, a0, a1, a2, sig_e2, shape, scale, association_y, association_fix, 
+                                    up_limit, GH_level_z){
+  
+  b_dim = ncol(G)
+  # standard GH rule
+  GH <- gauher(GH_level_z)
+  # expand grid
+  nodes <- as.matrix(expand.grid(rep(list(GH$x), b_dim)))
+  w <- as.matrix(expand.grid(rep(list(GH$w), b_dim))) 
+  # 2^(p/2) w*exp(||nodes||^2)
+  w <- 2^(b_dim/2)*apply(w, 1, prod)*exp(rowSums(nodes*nodes))
+  GH_nodes = adjust_nodes(mu_b_i=as.data.frame(t(rep(0,b_dim))), var_b_i=G, nodes,w)
+  
+  # adjust the weights by the marginal density of random effects
+  f_b <- sapply(1:GH_level_z^2, function(e) Rfast::dmvnorm(as.matrix(GH_nodes$n)[e,], mu = rep(0, b_dim), 
+                                                           sigma = G))
+  GH_nodes$w <- GH_nodes$w * f_b
+  
+  # treatment =1
+  treat_list <- lapply(1:GH_level_z^b_dim, function(row){
+    treat=1
+    r=GH_nodes$n[row,] %>% as.matrix
+    
+    ##########################
+    # mean_t
+    RMST <- RMST_CoxJM_Weilbull(G, a0, a1, a2, sig_e2, shape, scale, association_y, association_fix, r, treat, up_limit)
+    #############
+    # combine
+    return(list(RMST = RMST))
+  })
+  
+  # treatment =0
+  control_list <- lapply(1:GH_level_z^b_dim, function(row){
+    treat=0
+    r=GH_nodes$n[row,] %>% as.matrix
+    
+    ##########################
+    # mean_t
+    RMST <- RMST_CoxJM_Weilbull(G, a0, a1, a2, sig_e2, shape, scale, association_y, association_fix, r, treat, up_limit)
+    #############
+    # combine
+    return(list(RMST = RMST))
+  })
+  
+  RMST_treat_l <- sapply(treat_list, function(e) e$RMST)
+  RMST_control_l <- sapply(control_list, function(e) e$RMST)
+  RMST_treat <- sum(RMST_treat_l * GH_nodes$w)
+  RMST_control <- sum(RMST_control_l * GH_nodes$w)
+  delta_RMST = RMST_treat - RMST_control
+  
+  return(list(delta_RMST = delta_RMST, RMST_treat=RMST_treat, RMST_control=RMST_control))  
+}
+
+# Computing RMST for JM with Cox surival (piecewise constant baseline hazard with 1 knot)
 # model_fit is the output from JM (piecewise-PH, one knot)
-z_statistic_Cox <- function(model_fit, up_limit, GH_level_z, knot=2, vars=F){
+z_statistic_Cox_Piecewise <- function(model_fit, up_limit, GH_level_z, knot=2, vars=F){
   
   b_dim = ncol(model_fit$coefficients$D)
   
-  # get covariates and random effects of i
-  treat_vec = model_fit$data.id$treat
   # get coefficients
   a0 <- model_fit$coefficients$betas['(Intercept)']
   a1 <- model_fit$coefficients$betas['visits_age']
@@ -496,12 +549,12 @@ get_RMST_others <- function(dat, t_max){
   fitJOINT <- jointModel(fitLME, fitCOX, timeVar = "visits_age", method='piecewise-PH-GH', 
                          control = list(knots=c(0.5)))
   
-  RMST_delta_JMCox <- tryCatch({z_statistic_Cox(fitJOINT, up_limit = t_max, GH_level_z = 15, knot = 0.5, vars=F)$delta_RMST},
+  RMST_delta_JMCox <- tryCatch({z_statistic_Cox_Piecewise(fitJOINT, up_limit = t_max, GH_level_z = 15, knot = 0.5, vars=F)$delta_RMST},
                                error=function(e) return(NA))
   return(c(Cox=RMST_delta_Cox, GG=RMST_delta_GG, JMCox=RMST_delta_JMCox))
 }
 
-
+# RMST for a single individual
 RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, knot=2){
   # random effects
   r0 = r[,1]
@@ -531,6 +584,49 @@ RMST_CoxJM_piecewise <- function(a0,a1,a2,gam,alp,xi1,xi2, r, treat, up_limit, k
     tryCatch(
       {
         RMST <- integrate(f = S_CoxJM_piecewise, lower = 0, upper = up_limit)
+        # If no error occurs, set the flag to FALSE to exit the loop
+        error_occurred <- FALSE
+      },
+      error = function(e){
+        # error may occur when stretch of 0 present, decrease up_limit and continue the loop
+        up_limit <<- 0.8 * up_limit
+        ever <<- TRUE
+      }
+    )
+  }
+  if(ever) warning('Upper limit reduced during integration. Results may not be accurate.')
+  
+  return(RMST$value)
+}
+
+# RMST for a single individual
+RMST_CoxJM_Weilbull <- function(G, a0, a1, a2, sig_e2, shape, scale, association_y, association_fix, r, treat, up_limit){
+  # random effects
+  r0 = r[,1]
+  r1 = r[,2]
+  
+  S_CoxJM_Weibull <- function(t) {
+    h <- function(s){
+      XX <- cbind(s,s*treat)
+      ZZ <- cbind(1,s)
+      fval <- as.vector(XX%*%c(a1,a2) + ZZ%*%t(r))
+      hh <- exp(log(scale)+log(shape)+(shape-1)*log(s)+association_fix*treat+association_y*fval)
+      return(hh)
+    }
+    S <- sapply(t, function(upper) {
+      exp(-integrate(h,lower=0,upper=upper)$value)
+    })
+    return(S)
+  }
+  
+  error_occurred <- TRUE
+  ever <- FALSE
+  Nr_try <- 0
+  while (error_occurred & (Nr_try < 20)){
+    Nr_try = Nr_try + 1
+    tryCatch(
+      {
+        RMST <- integrate(f = S_CoxJM_Weibull, lower = 0, upper = up_limit)
         # If no error occurs, set the flag to FALSE to exit the loop
         error_occurred <- FALSE
       },
