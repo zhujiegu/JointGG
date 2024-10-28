@@ -96,8 +96,11 @@ aGH_Q_beta <- function(Nr.cores=1, update_beta=F, update_mu, update_sigma, updat
   names(list_f) <- IDs
   results <- lapply(IDs, function(i) sum(list_com[[i]] * list_f[[i]], na.rm = T)) # 0*Inf=NA might occur here
   # Devide by the marginal likelihood and sum over individuals to get the final expectation
-  results <- Reduce('+', Map('/', results, list_likl))
-  return(results)
+  # replace NA with the smallest
+  results_ <- Map('/', results, list_likl)
+  results_min <- Map('/', results, list_likl) %>% unlist %>% min(na.rm = T)
+  result <- Reduce('+', lapply(results_, function(x) ifelse(is.na(x), results_min, x)))
+  return(result)
 }
 
 
@@ -176,7 +179,14 @@ aGH_Q_grt_beta <- function(Nr.cores=1, dat_perID_t, params, list_com, n_w_adj, l
   # Apply this function across the corresponding elements of list_f and common_part$list_com
   results <- Map(multiply_sum_matrices, list_grt, list_com)
   # Devide by the marginal likelihood and sum over individuals to get the final expectation
-  results <- Reduce('+', Map('/', results, list_likl)) %>% as.matrix %>% as.vector
+  # results <- Reduce('+', Map('/', results, list_likl)) %>% as.matrix %>% as.vector
+  results <- Reduce('+', lapply(Map('/', results, list_likl), 
+                                function(e){
+                                  if (any(is.na(e))) {
+                                    return(rep(0, length(e)))
+                                  } else {
+                                    return(e)
+                                  }}))%>% as.matrix %>% as.vector
   return(results)
 }
 

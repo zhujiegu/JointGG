@@ -1,6 +1,7 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', 
-                  GH_level=7, GH_level_I=15, refine_GH=T, full_adaptive=T, max_attp=10){
+                  GH_level=7, GH_level_I=15, refine_GH=T, full_adaptive=T, max_attp=10, M_method='optim'){
+  if(!M_method%in%c('One-step_grad', 'optim')) stop('Specified M_method does not exist')
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
@@ -29,7 +30,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=10
     print(init_params)
     EM_results <- tryCatch({
       EM_body(dat, init_params, rel_tol, tol, steps, Nr.cores, model_complex, 
-              GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj)
+              GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj, M_method)
     }, error = function(e) {
       cat("Error occurred in attempt", Nr_attp, ":", e$message, "\n")
       dat_sub <- dat_subset(dat, proportion=0.7)
@@ -90,7 +91,7 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=10
 }
 
 EM_body <- function(dat, init_params, rel_tol,tol, steps, Nr.cores, model_complex, 
-                    GH_level, GH_level_I, refine_GH, full_adaptive, n_w_initial){
+                    GH_level, GH_level_I, refine_GH, full_adaptive, n_w_initial, M_method){
   params <- init_params
   logl <- c()
   ####################################
@@ -109,7 +110,7 @@ EM_body <- function(dat, init_params, rel_tol,tol, steps, Nr.cores, model_comple
   Nr_beta_grt_err = 0
   for(i in 1:steps){
     step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_initial,  model_complex,
-                        Nr_beta_grt_err)
+                        Nr_beta_grt_err, M_method)
     step_outp_list[[i]] <- step_outp
     params = step_outp$params
     params_list[[i+1]] <- params
@@ -155,7 +156,8 @@ EM_body <- function(dat, init_params, rel_tol,tol, steps, Nr.cores, model_comple
         # update node every step
         n_w_adj <- aGH_n_w(step_outp$E_b_list, step_outp$E_bb_var, Nr.cores=Nr.cores, GH_level=GH_level, dat, plot_nodes=F)
       }
-      step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex, Nr_beta_grt_err)
+      step_outp = EM_step(dat, dat_perID_t, params, GH_level=GH_level, Nr.cores=Nr.cores, n_w_adj,  model_complex, 
+                          Nr_beta_grt_err, M_method)
       step_outp_list[[i+j]] <- step_outp
       params = step_outp$params
       params_list[[i+j+1]] <- params
@@ -215,7 +217,7 @@ EM_body <- function(dat, init_params, rel_tol,tol, steps, Nr.cores, model_comple
 
 # One iteration of EM
 EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model_complex=c('saturated','normal'), 
-                    Nr_beta_grt_err){
+                    Nr_beta_grt_err, M_method){
   
   # Numerical integration of the common part and store the results (all sample combined)
   list_com <- aGH_common(params=params, n_w_adj=n_w_adj, dat=dat, model_complex, Nr.cores)
@@ -231,49 +233,58 @@ EM_step <- function(dat, dat_perID_t, params, GH_level, Nr.cores, n_w_adj, model
   # Start EM for survival parameters here
   ##################################################################
   IDs <- unique(dat$longitudinal$ID)
-  # Backtracking rule sequentially to find the step size for mu, sigma, q, consecutively.
   #########################################
-  # mu
+  # beta one-step gradient
   #########################################
-  s=0.1
-  # current E(log(f(V,Delta))
-  Q_beta <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params, 
-                       list_com, n_w_adj, list_likl,model_complex)
-  # Gradients
-  Q_grt_beta <- aGH_Q_grt_beta(Nr.cores=Nr.cores, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
-  if(all(Q_grt_beta==0)){
-    Nr_beta_grt_err = Nr_beta_grt_err+1
-    if(Nr_beta_grt_err>3) stop('gradient of beta is zero in consecutive EM steps')
-  }else{
-    Nr_beta_grt_err = 0
-  }
-  
-  Q_beta_new <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
-                           update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
-  k=1 # number of search of s, to prevent infinite loop here
-  while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta))){
-    s = 0.8*s
-    # print(s)
+  if(M_method=='One-step-grad'){
+    s=0.1
+    # current E(log(f(V,Delta))
+    Q_beta <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params, 
+                         list_com, n_w_adj, list_likl,model_complex)
+    # Gradients
+    Q_grt_beta <- aGH_Q_grt_beta(Nr.cores=Nr.cores, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+    if(all(Q_grt_beta==0)){
+      Nr_beta_grt_err = Nr_beta_grt_err+1
+      if(Nr_beta_grt_err>3) stop('gradient of beta is zero in consecutive EM steps')
+    }else{
+      Nr_beta_grt_err = 0
+    }
+    
     Q_beta_new <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
                              update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
-    k=k+1
-    if(k>50){
-      warning(paste0('trapped in step size search for beta'))
-      s=0
-      break
+    k=1 # number of search of s, to prevent infinite loop here
+    while(Q_beta_new < Q_beta + 0.5*s*as.numeric(crossprod(Q_grt_beta))){
+      s = 0.8*s
+      # print(s)
+      Q_beta_new <- aGH_Q_beta(Nr.cores=Nr.cores, update_beta=T, update_mu=s*Q_grt_beta[1:4], update_sigma=s*Q_grt_beta[5:8], 
+                               update_q=s*Q_grt_beta[9:12], dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
+      k=k+1
+      if(k>50){
+        warning(paste0('trapped in step size search for beta'))
+        s=0
+        break
+      }
     }
+    # update for the next beta
+    params$beta_mu <- params$beta_mu + s*Q_grt_beta[1:4]
+    params$beta_sigma <- params$beta_sigma + s*Q_grt_beta[5:8]
+    params$beta_q <- params$beta_q + s*Q_grt_beta[9:12]
   }
-  ##################################################
-  # # testing
-  # del=1e-19
-  # grd_num <- aGH_Q_beta(Nr.cores=1, update_beta=NULL, update_value, dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)-
-  #   aGH_Q_beta(Nr.cores=1, update_beta='mu', update_value=c(del,0,0,0), dat_perID_t, params, list_com, n_w_adj, list_likl,model_complex)
-  # grd_num/del
   
-  # update for the next beta
-  params$beta_mu <- params$beta_mu + s*Q_grt_beta[1:4]
-  params$beta_sigma <- params$beta_sigma + s*Q_grt_beta[5:8]
-  params$beta_q <- params$beta_q + s*Q_grt_beta[9:12]
+  #########################################
+  # beta root finding
+  #########################################
+  if(M_method=='optim'){
+    params_vec_ <- beta_vec_transform(c(params$beta_mu,params$beta_sigma,params$beta_q), model_complex, type='collapse', rm_reff=F)
+    beta_new <- optim_beta_try(params_vec_, model_complex, Nr.cores, dat_perID_t, list_com, n_w_adj, list_likl)
+    beta_new <- beta_vec_to_param(beta_new$par, model_complex, rm_reff=F)
+    
+    # update for the next beta
+    params$beta_mu <- beta_new$beta_mu
+    params$beta_sigma <- beta_new$beta_sigma
+    params$beta_q <- beta_new$beta_q
+  }
+  
   ##################################################################
   # Update parameters for longitudinal and random effects
   ##################################################################
@@ -361,6 +372,30 @@ params_generate <- function(method = c("random", "specify", "method3"),params_sp
   return(params)
 }
 
+optim_beta_try <- function(params_vec, model_complex, Nr.cores, dat_perID_t, list_com, n_w_adj, list_likl){
+  tryCatch(
+    optim(params_vec, 
+          fn = function(vec){
+            params_ <- beta_vec_to_param(vec, model_complex, rm_reff=F)
+            -aGH_Q_beta(Nr.cores=Nr.cores, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params_, 
+                        list_com, n_w_adj, list_likl,model_complex)
+          }, 
+          gr = function(vec){
+            params_ <- beta_vec_to_param(vec, model_complex, rm_reff=F)
+            grd <- -aGH_Q_grt_beta(Nr.cores, dat_perID_t, params_, list_com, n_w_adj, list_likl,model_complex)
+            beta_vec_transform(grd, model_complex, type='collapse', rm_reff=F)
+          },
+          method = 'L-BFGS-B', hessian = FALSE),
+    error = function(e) {
+      optim(params_vec, 
+            fn = function(vec){
+              params_ <- beta_vec_to_param(vec, model_complex, rm_reff=F)
+              -aGH_Q_beta(Nr.cores=Nr.cores, update_beta=F, update_mu, update_sigma, update_q, dat_perID_t, params_, 
+                          list_com, n_w_adj, list_likl,model_complex)
+            }, method = 'Nelder-Mead', hessian = FALSE)
+    }
+  )
+}
 
 params_vec_list <- function(params_vec) {
   # Assuming the order and size of each parameter is known and fixed as per your description
