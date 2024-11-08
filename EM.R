@@ -1,7 +1,7 @@
 # dat is a list containing two sublist "longitudinal" and "survival"
 JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=100, Nr.cores=1, model_complex='normal', 
-                  GH_level=7, GH_level_I=15, refine_GH=T, full_adaptive=T, max_attp=10, M_method='optim'){
-  if(!M_method%in%c('One-step_grad', 'optim')) stop('Specified M_method does not exist')
+                  GH_level=7, GH_level_I=15, refine_GH=T, full_adaptive=T, max_attp=10, M_method='default'){
+  if(!M_method%in%c('default', 'One-step_grad', 'optim')) stop('Specified M_method does not exist')
   if(!all.equal(unique(dat$longitudinal$ID), dat$survival$ID)) stop('please align IDs of longitudinal and survival data')
   # longitudinal for two-stage initial parameter and also pseudo-adaptive GH nodes
   fit_y <- fit_longitudinal(dat)
@@ -29,14 +29,27 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=10
     print('initial parameters:')
     print(init_params)
     EM_results <- tryCatch({
-      EM_body(dat, init_params, rel_tol, tol, steps, Nr.cores, model_complex, 
-              GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj, M_method)
+      if(M_method != 'default'){
+        EM_body(dat, init_params, rel_tol, tol, steps, Nr.cores, model_complex, 
+                GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj, M_method)
+      }
+      if(M_method == 'default'){
+        if(Nr_attp < max_attp/2){
+          print(paste0('Attemp, ', Nr_attp, ', M step with one-step gradient accent'))
+          EM_body(dat, init_params, rel_tol, tol, steps, Nr.cores, model_complex, 
+                  GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj, M_method = 'One-step_grad')
+        }else{
+          print(paste0('Attemp, ', Nr_attp, ', M step with optim'))
+          EM_body(dat, init_params, rel_tol, tol, steps, Nr.cores, model_complex, 
+                  GH_level, GH_level_I, refine_GH, full_adaptive, n_w_adj, M_method = 'optim')
+        }
+      }
     }, error = function(e) {
       cat("Error occurred in attempt", Nr_attp, ":", e$message, "\n")
       dat_sub <- dat_subset(dat, proportion=0.7)
       fit_y_sub <- fit_longitudinal(dat_sub)
       fit_t_sub <- fit_survival(dat_sub, model_complex, fit_y_sub$reffects.individual)
-      if(Nr_attp < max_attp/2){
+      if(Nr_attp != max_attp){
         init_params <<- list(G=fit_y_sub$G,
                              a0=fit_y_sub$a0,
                              a1=fit_y_sub$a1,
@@ -56,19 +69,6 @@ JM_EM <- function(dat, init_params='two-stage', rel_tol=1e-3, tol=1e-3, steps=10
                              beta_sigma=fit_t_sub$beta_sigma/10,
                              beta_q=fit_t_sub$beta_q/10)
       }
-      # if(Nr_attp > max_attp/2){
-      #   params_names <- names(init_params)
-      #   init_params <<- lapply(params_names, function(name) {
-      #     param <- params[[name]]
-      #     if(startsWith(name, 'beta')) {
-      #       param <- param / 5
-      #     }else{
-      #       param
-      #     }
-      #     return(param)
-      #   })
-      #   names(init_params) <<- params_names
-      # }
       return(NULL)  # Return NULL to signal failure
     })
   }
@@ -212,7 +212,7 @@ EM_body <- function(dat, init_params, rel_tol,tol, steps, Nr.cores, model_comple
   # output
   EM_results <- list(params = params, I_beta = I_beta, E_b=step_outp$E_b, logl = logl,model_complex=model_complex,
                      GH_level=GH_level, GH_level_I=GH_level_I, Nr_steps=i+j, logl_final=logl_final, 
-                     params_list=params_list)
+                     params_list=params_list, M_method)
 }
 
 # One iteration of EM
