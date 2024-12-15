@@ -205,7 +205,7 @@ z_statistic_Cox_Weibull <- function(G, a0, a1, a2, sig_e2, shape, scale, associa
 
 # Computing RMST for JM with Cox surival (piecewise constant baseline hazard with 1 knot)
 # model_fit is the output from JM (piecewise-PH, one knot)
-z_statistic_Cox_Piecewise <- function(model_fit, up_limit, GH_level_z, knot=2, vars=F){
+z_statistic_Cox_piecewise <- function(model_fit, up_limit, GH_level_z, knot=2, vars=F){
   
   b_dim = ncol(model_fit$coefficients$D)
   
@@ -514,44 +514,92 @@ get_RMST_var_GG <- function(model_fit, up_limit){
 }
 
 # get delta RMST in other comparing methods
-get_RMST_others <- function(dat, t_max){
+get_RMST_others <- function(dat, t_max, methods=c('Cox-Weibull','GG','JMCox-Weibull','JMCox-piecewise')){
+  results <- numeric(0)
   ######################
-  # Cox Weibull
-  fit_parametric <- flexsurvreg(Surv(times, status) ~ treat, data = dat$survival, dist = "weibull")
-  RMST_delta_Cox <- (predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=1))-
-                       predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=0)))$.pred_rmst
-  # print('Cox finished')
-  ######################
-  # GG
-  fit_GG <- optim_trycatch(initial_vec=rep(0,5), dat, 'normal', reffects.individual=NULL, rm_reff=T)$par
-  RMST_delta_GG <- mean_t(mu = fit_GG[1]+fit_GG[2], sigma = exp(fit_GG[3]+fit_GG[4]), q = exp(fit_GG[5]), t_max) - 
-    mean_t(mu = fit_GG[1], sigma = exp(fit_GG[3]), q = exp(fit_GG[5]), t_max)
-  # print('GG finished')
-  ######################
-  # JM Cox piecewise-constant
-  extract_numeric_id <- function(id){
-    as.numeric(gsub("ID", "", id))
+  if('Cox-Weibull' %in% methods){
+    # Cox Weibull
+    fit_parametric <- flexsurvreg(Surv(times, status) ~ treat, data = dat$survival, dist = "weibull")
+    RMST_delta_Cox <- (predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=1))-
+                         predict(fit_parametric, type = 'rmst', times = t_max, newdata = tibble(treat=0)))$.pred_rmst
+    results['Cox'] = RMST_delta_Cox
   }
-  dat$longitudinal$ID <- extract_numeric_id(dat$longitudinal$ID)
-  dat$survival$ID <- extract_numeric_id(dat$survival$ID)
-  # dat_joint <- merge(dat$interim1$longitudinal, dat$interim1$survival) %>% arrange(ID)
-  # dat_unique <- dat_joint %>% group_by(ID) %>% head(1)
+  ######################
+  if('GG' %in% methods){
+    # GG
+    fit_GG <- optim_trycatch(initial_vec=rep(0,5), dat, 'normal', reffects.individual=NULL, rm_reff=T)$par
+    RMST_delta_GG <- mean_t(mu = fit_GG[1]+fit_GG[2], sigma = exp(fit_GG[3]+fit_GG[4]), q = exp(fit_GG[5]), t_max) - 
+      mean_t(mu = fit_GG[1], sigma = exp(fit_GG[3]), q = exp(fit_GG[5]), t_max)
+    results['GG']=RMST_delta_GG
+  }
+  ######################
+  if(('JMCox-Weibull' %in% methods) | ('JMCox-piecewise' %in% methods)){
+    extract_numeric_id <- function(id){
+      as.numeric(gsub("ID", "", id))
+    }
+    dat$longitudinal$ID <- extract_numeric_id(dat$longitudinal$ID)
+    dat$survival$ID <- extract_numeric_id(dat$survival$ID)
+    # dat_joint <- merge(dat$interim1$longitudinal, dat$interim1$survival) %>% arrange(ID)
+    # dat_unique <- dat_joint %>% group_by(ID) %>% head(1)
+    
+    fitLME <- lme(value ~ 1 + visits_age + treat:visits_age,  
+                  random=~ 1 + visits_age|ID,
+                  data = dat$longitudinal,
+                  control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-5,
+                                       msMaxEval=1000, niterEM = 50))
+    
+    fitCOX <- coxph(Surv(times, status) ~ treat, data = dat$survival, x = TRUE) # joint model fit with a spline-approximated baseline hazard function 
+    if('JMCox-Weibull' %in% methods){
+      fitJOINT_Weibull <- tryCatch(jointModel(fitLME, fitCOX, timeVar = "visits_age", method='weibull-PH-aGH'),
+                                   error=function(e){
+                                     message("An error occurred in jointModel Weibull: ", e)
+                                     return(NULL)
+                                   })
+      if(is.null(fitJOINT_Weibull)){
+        results['JMCox_Weibull'] = NA
+      }else{
+        params_Cox_Weibull <- list(G = fitJOINT_Weibull$coefficients$D,
+                                   a0=fitJOINT_Weibull$coefficients$betas[1],
+                                   a1=fitJOINT_Weibull$coefficients$betas[2],
+                                   a2=fitJOINT_Weibull$coefficients$betas[3],
+                                   sig_e2=fitJOINT_Weibull$coefficients$sigma^2,
+                                   shape=fitJOINT_Weibull$coefficients$sigma.t,
+                                   scale=with(fitJOINT_Weibull$coefficients, sigma.t*exp(gammas[1]+alpha*betas[1])),
+                                   association_y=fitJOINT_Weibull$coefficients$alpha,
+                                   association_fix=fitJOINT_Weibull$coefficients$gammas[-1])
+        
+        RMST_delta_JMCox_Weibull <- tryCatch(do.call(z_statistic_Cox_Weibull, c(params_Cox_Weibull, list(up_limit = t_max, GH_level_z = 15)))$delta_RMST,
+                                             error=function(e){
+                                               message("An error occurred in z_statistic_Cox_Weibull: ", e)
+                                               return(NA)
+                                             })
+        results['JMCox_Weibull'] = RMST_delta_JMCox_Weibull 
+      }
+    }
+    
+    if('JMCox-piecewise' %in% methods){
+      # notice here we use one knot at median of survival time
+      fitJOINT_piecewise <- tryCatch(jointModel(fitLME, fitCOX, timeVar = "visits_age", method='piecewise-PH-aGH',
+                                                control = list(knots=c(median(filter(dat$survival, status==1)$times)))),
+                                     error=function(e){
+                                       message("An error occurred in jointModel piecewise: ", e)
+                                       return(NULL)
+                                     })
+      if(is.null(fitJOINT_piecewise)){
+        results['JMCox_piecewise'] = NA
+      }else{
+        RMST_delta_JMCox_piecewise <- tryCatch({z_statistic_Cox_piecewise(fitJOINT_piecewise, up_limit = t_max, GH_level_z = 15, 
+                                                                          knot = median(filter(dat$survival, status==1)$times), vars=F)$delta_RMST},
+                                               error=function(e){
+                                                 message("An error occurred in z_statistic_Cox_piecewise: ", e)
+                                                 return(NA)
+                                               })
+        results['JMCox_piecewise'] = RMST_delta_JMCox_piecewise
+      }
+    }
+  }
   
-  fitLME <- lme(value ~ 1 + visits_age + treat:visits_age,  
-                random=~ 1 + visits_age|ID,
-                data = dat$longitudinal,
-                control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-5,
-                                     msMaxEval=1000, niterEM = 50))
-  
-  fitCOX <- coxph(Surv(times, status) ~ treat, data = dat$survival, x = TRUE) # joint model fit with a spline-approximated baseline hazard function 
-  
-  # notice here we use one knot at t=0.5
-  fitJOINT <- jointModel(fitLME, fitCOX, timeVar = "visits_age", method='piecewise-PH-GH', 
-                         control = list(knots=c(0.5)))
-  
-  RMST_delta_JMCox <- tryCatch({z_statistic_Cox_Piecewise(fitJOINT, up_limit = t_max, GH_level_z = 15, knot = 0.5, vars=F)$delta_RMST},
-                               error=function(e) return(NA))
-  return(c(Cox=RMST_delta_Cox, GG=RMST_delta_GG, JMCox=RMST_delta_JMCox))
+  return(results)
 }
 
 # RMST for a single individual

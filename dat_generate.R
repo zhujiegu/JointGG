@@ -95,7 +95,7 @@ simData_GG <- function(n, seed, visits_age, cens_time, G, a0, a1, a2, sig_e2, be
 
 
 simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
-                        G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q, cens_interval=NULL){
+                        G, a0, a1, a2, sig_e2, beta_mu, beta_sigma, beta_q, cens_interval=NULL, log_curve=F){
   set.seed(seed)
   b_dim=nrow(G)
   #################
@@ -140,7 +140,7 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   ##############################
   # Data for interim analysis 
   ##############################
-  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, k, a0, a1, a2, sig_e2, visits_age))
+  dat <- lapply(interim_times, function(k) generate_dat_interim(dat_t, k, a0, a1, a2, sig_e2, visits_age, log_curve))
   names(dat) <- c(paste0('interim', 1:length(interim_times)))
   
   dat$true_b <- dat_t %>% select(ID,b0,b1)
@@ -171,17 +171,20 @@ simData_seq <- function(n, seed, visits_age, recruitment_time, interim_times,
   return(dat)
 }
 
-generate_dat_interim <- function(dat_t, interim_time, a0, a1, a2, sig_e2, visits_age){
+generate_dat_interim <- function(dat_t, interim_time, a0, a1, a2, sig_e2, visits_age, log_curve){
   dat_t %<>% filter(start<=interim_time)
   dat_t %<>% rowwise %>% mutate(status=ifelse(end<min(interim_time, cens_time), 1, 0), cens_t=min(interim_time, cens_time)) %>% 
     mutate(times=min(surv_t,cens_t-start)) %>% ungroup
-  # Longitudinal process  
+  # Longitudinal process
   dat_y <- tibble(dat_t %>% select(ID:b1, start, end, cens_t), exposure='SBP')
   dat_y %<>% cross_join(tibble(visits_age)) %>% mutate(visits_time = visits_age+start)
   dat_y %<>% rowwise %>% filter(visits_time <= min(end, cens_t)) %>% ungroup
-  dat_y %<>% mutate(value=(a0+b0+(a1+b1)*visits_age+a2*treat*visits_age +
-                             rnorm(length(visits_age), 0,sqrt(sig_e2))))
-  
+  if(log_curve){
+    dat_y %<>% mutate(value=b0 + b1*visits_age+a2*treat*visits_age+ 2.5*log(visits_age+1.7)+rnorm(length(visits_age), 0,sqrt(sig_e2)))
+  }else{
+    dat_y %<>% mutate(value=(a0+b0+(a1+b1)*visits_age+a2*treat*visits_age +
+                               rnorm(length(visits_age), 0,sqrt(sig_e2))))
+  }
   dat_y %<>% select(ID, treat, exposure, visits_age, value)
   dat_t %<>% select(ID, treat, status, times)
   return(list(longitudinal=dat_y, survival=dat_t))
